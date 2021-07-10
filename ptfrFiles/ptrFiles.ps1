@@ -2,6 +2,8 @@
  .Synopsis
    Allows the secure transfer and reconciliation of a large number of files
 
+   PTRfile: Protect, Transfer, Reconcile files
+
  .Description
    Packages source folder contents into a 7ZIP file, adding a reconciliation 
    file to the 7ZIP file and then encrypting the contents.  Send 
@@ -14,7 +16,8 @@
    file is written at exceution to record activity.
 
    The SecretFileName can be sent via email, while the 7ZIP can go different routes 
-   such as:
+   due to possible size such as:
+   * Cloud storage provider
    * HTTPS web file upload
    * SFTP transfer
    * USB stick
@@ -27,14 +30,17 @@
    SecretKey method the ecnrypted contents will only be as secure as the strength
    of your secret.
 
+   You can use storage providers such as Dropbox, AWS S3, Google Drive, OneDrive or BackBlaze
+   and your documents have additonal protection.
+
    A log file is produced on execution.  Repeated executions on the same day
    will add text content to the same log file.  The default log name takes the form:
-   "protect_transfer_reconcile_yyyy-MM-dd.log"
+   "ptr_files_yyyy-MM-dd.log"
 
    You will need to have installed the 7Zip4Powershell PowerShell cmdlet 
    before using the pack or unpack actions.  You can install the cmdlet
    by executing 
-   .\protect_transfer_reconcile.ps1 -Action install -Path ".\" 
+   .\ptrFiles.ps1 -Action install -Path ".\" 
 
    Author:  Tom Peltonen
 
@@ -83,7 +89,12 @@
  .Parameter RootFolderName
   The root folder, which should be used if using wildcard (*) for the
   path.  A guess will be made as to value if not supplied, which will
-  work in  many circumstances.
+  work in many circumstances.
+
+ .Parameter FileFilter
+  A filter on file names.  This does not filter directories.
+  An example to only include JPEG file is "*.jpg".  You can also
+  filter on picture file names starting with "IMG*.jpg"
 
  .Parameter ReconcileFileName
   The name of the reconfile file name to generate during pack or use 
@@ -93,7 +104,7 @@
   Once a reconcile is executed, you can delete this file from the 
   restored location.
 
-  The default name is "##protect_transfer_reconcile##.csv"
+  The default name is "##protect_transfer_reconcile_files##.csv"
 
  .Parameter SecretFileName
   The secret file name is used with RecipientKeyName to secure the
@@ -126,32 +137,35 @@
   free storage to package the source contents into a single 7ZIP file.  It is your
   responsibility to ensure sufficient storage space exists.
 
+  If you need to copy files from one directory to another accessible directory from
+  your Windows desktop, you might consider using ROBOCOPY.  If the target directory
+  is not accessible and you want to reconcile, then this tool is appropriate. 
  
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
    # A file named ".\transfer.key" is also generated alongside the 7ZIP file
-   protect_transfer_reconcile.ps1 -Action pack -Path ".\transferpack\" -RecipientKeyName data@mycompany
+   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -RecipientKeyName data@mycompany
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
    # You will need the file named ".\transfer.key" to unpack the encrypted 7ZIP file
-   .\protect_transfer_reconcile.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
+   .\ptrFiles.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
  
  .Example
    # Reconcile files in folder ".\targetdir"
-   .\protect_transfer_reconcile.ps1 -Action reconcile -Path ".\targetdir" 
+   .\ptrFiles.ps1 -Action reconcile -Path ".\targetdir" 
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a password
-   .\protect_transfer_reconcile.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
+   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a password
-   .\protect_transfer_reconcile.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
+   .\ptrFiles.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\02*" where the folder name starts with "02" using a password
-   .\protect_transfer_reconcile.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
+   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
 
 #>
 
@@ -162,6 +176,7 @@ param (
     [String] $SecretKey, 
     [String] $TransferFileName, 
     [String] $RootFolderName,
+    [String] $FileFilter,
     [String] $ReconcileFileName, 
     [String] $SecretFileName, 
     [switch] $ExcludeHash,
@@ -170,7 +185,8 @@ param (
 )
 
 $default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
-$default_reconcileFile = "##protect_transfer_reconcile##.csv"
+$default_archiveFile = ".\ptr_file_##date##.7z"
+$default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
 $default_secretEncrypted = ".\transfer.key"
 
 
@@ -185,7 +201,7 @@ function Write-Log {
     {
         $logPath = Join-Path -Path ".\" -ChildPath "Logs"
     }
-    $logName = "protect_transfer_reconcile_$date.log"
+    $logName = "ptr_files_$date.log"
     $sFullPath = Join-Path -Path $logPath -ChildPath $logName 
 
     if (!(Test-Path -Path $logPath)) {
@@ -228,7 +244,7 @@ function Test-Files
 {
     Param( 
         [Parameter(Mandatory)][String] $FolderName,
-        [String] $Filter
+        [String] $FileFilter
     ) 
 
     Get-ChildItem $folderName -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
@@ -245,7 +261,7 @@ Param(
     [Parameter(Mandatory)][String] $ReconcileFile,
     [Parameter(Mandatory)][String] $FolderName,
     [String] $RootFolderName,
-    [String] $Filter,
+    [String] $FileFilter,
     [switch] $Feedback = $false
 ) 
 
@@ -272,7 +288,7 @@ Param(
     }
 
     Set-Content -Path $reconcileFile  -Value '"FullName","LastWriteTime","Length","Hash","ParentFolder","Object"'
-    Get-ChildItem $folderName -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+    Get-ChildItem $folderName -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
         $totalFilecount = $totalFileCount + 1
         $totalFileSize = $totalFileSize + $_.Length 
         if ($ExcludeHash) {
@@ -314,7 +330,7 @@ function Invoke-Pack
 Param( 
     [String] $TransferFolder,
     [String] $RootFolder,
-    [String] $Filter,
+    [String] $FileFilter,
     [String] $Secret,
     [String] $CompressFile,
     [String] $ReconcileFile
@@ -327,13 +343,18 @@ Param(
         Exit
     }
 
-    Write-Log "Packing files to compress file '$compressFile'"
+    Write-Log "Saving folders/files to archive file '$compressFile'"
     Write-Log "Source folder is '$transferFolder'"
-    Write-Host "Packing files to compress file '$compressFile'"
+    Write-Host "Saving folders/files to archive file '$compressFile'"
 
     if ($reconcileFile -eq "")
     {
         $reconcileFile = $default_reconcileFile
+    }
+
+    if ($fileFilter -eq "")
+    {
+        $fileFilter = "*"
     }
 
     if ($transferFolder.EndsWith("*"))
@@ -341,14 +362,14 @@ Param(
         $firstCompress = $true
 
         Get-ChildItem $transferFolder| ForEach-Object {
-            Write-Log "Transfer folder '$($_.FullName)'"
-            Write-Host "Transfer folder '$($_.FullName)'"
-            if (Test-Files -FolderName $_.FullName -Filter $filter) {
+            Write-Log "Archive folder '$($_.FullName)'"
+            Write-Host "Archivefolder '$($_.FullName)'"
+            if (Test-Files -FolderName $_.FullName -FileFilter $fileFilter) {
                 try {
                     if ($firstCompress) {
-                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot    
+                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
                     } else {
-                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Append    
+                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
                     }
                     $firstCompress = $false
                 } catch {
@@ -361,20 +382,20 @@ Param(
             }
         }
     } else {
-        Write-Log "Transfer folder '$transferFolder'"
-        Write-Host "Transfer folder '$transferFolder'"
-        Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip     
+        Write-Log "Archive folder '$transferFolder'"
+        Write-Host "Archive folder '$transferFolder'"
+        Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip -Filter $fileFilter    
     }
 
     If (!(Test-Path -Path $compressFile )) {    
-        Write-Log "Compress file '$compressFile' was not created.  See any previous errors"
-        Write-Host "Compress file '$compressFile' was not created.  See any previous errors" -ForegroundColor Red
+        Write-Log "Archive file '$compressFile' was not created.  See any previous errors"
+        Write-Host "Archive file '$compressFile' was not created.  See any previous errors" -ForegroundColor Red
         Close-Log
         Exit
     }
 
-    Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder -Filter $filter -RootFolderName $rootFolder
-    If (!(Test-Path -Path $compressFile )) {    
+    Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder -FileFilter $fileFilter -RootFolderName $rootFolder
+    If (!(Test-Path -Path $reconcileFile )) {    
         Write-Log "Reconcile file '$reconcileFile' was not created.  See any previous errors"
         Write-Host "Reconcile file '$reconcileFile' was not created.  See any previous errors" -ForegroundColor Red
         Close-Log
@@ -387,8 +408,8 @@ Param(
     Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
     Remove-Item $fullReconcileName
 
-    Write-Log "Package ready in file '$compressFile' from folder '$transferFolder'"
-    Write-Host "Package ready in file '$compressFile' from folder '$transferFolder'"  -ForegroundColor Green
+    Write-Log "Archive file '$compressFile' created from folder '$transferFolder'"
+    Write-Host "Archive file '$compressFile' created from folder '$transferFolder'"  -ForegroundColor Green
 }
 
 
@@ -401,19 +422,19 @@ Param(
 ) 
 
     If (!(Test-Path -Path $CompressFile )) {    
-        Write-Log "Transfer/compress file '$CompressFile' does not exist"
-        Write-Host "Transfer/compress file '$CompressFile' does not exist" -ForegroundColor Red
+        Write-Log "Archive file '$CompressFile' does not exist"
+        Write-Host "Archive file '$CompressFile' does not exist" -ForegroundColor Red
         Close-Log
         Exit
     }
 
     Write-Log "Restoring files transferred to '$restoreFolder'"
-    Write-Log "Package/Compress file is '$compressFile'"
+    Write-Log "Archive file is '$compressFile'"
 
     # Uncompress the data files
     Expand-7Zip -ArchiveFileName $compressFile -TargetPath $restoreFolder -Password $secret
-    Write-Log "Package unpacked from file '$compressFile' to folder '$restoreFolder'"
-    Write-Host "Package unpacked from file '$compressFile' to folder '$restoreFolder'" -ForegroundColor Green
+    Write-Log "Contents unpacked from archive file '$compressFile' to folder '$restoreFolder'"
+    Write-Host "Contents unpacked from archive file '$compressFile' to folder '$restoreFolder'" -ForegroundColor Green
 }
 
 
@@ -423,8 +444,7 @@ function Invoke-Reconcile
 Param( 
     [Parameter(Mandatory)][String] $ReconcileFile,
     [Parameter(Mandatory)][String] $Folder,
-    [String] $TargetReconcileFile,
-    [String] $Filter
+    [String] $TargetReconcileFile
 ) 
 
     if ($reconcileFile -eq "")
@@ -546,7 +566,7 @@ if ($action -eq "Pack") {
     }
 
     if ($TransferFileName -eq "") {
-        $TransferFileName = ".\transfer_protect_$default_dateLocal.7z"
+        $TransferFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
     }
 
     if ($SecretKey -eq "") {
@@ -560,7 +580,7 @@ if ($action -eq "Pack") {
         $secret = $SecretKey
     }
 
-    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $transferFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName
+    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $transferFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
 }
 
 
@@ -573,8 +593,8 @@ if ($action -eq "Unpack") {
         return
     } 
     if ($TransferFileName -eq "") {
-            Write-Log "Transfer/Compress File Name required for unpacking" 
-            Write-Host "Transfer/Compress File Name required for unpacking" -ForegroundColor Red
+            Write-Log "Archive file Name required for unpacking" 
+            Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
             Close-Log
             return
     } 
@@ -599,7 +619,7 @@ if ($action -eq "ReconcileFile") {
     {
         $reconcileFileName = $default_reconcileFile
     }
-    Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName
+    Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName -FileFilter $fileFilter
 }
 
 
