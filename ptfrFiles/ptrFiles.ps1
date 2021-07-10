@@ -3,10 +3,11 @@
 param (
     [Parameter(Mandatory)][String] $Action, 
     [Parameter(Mandatory)][String] $Path, 
-    [String] $RecipientKeyName, 
+    [String] $RecipientKeyName,
+    [String] $SecretKey, 
     [String] $TransferFileName, 
-    [String] $ReconcileFileName = "##protect_transfer_reconcile##.csv", 
-    [String] $SecretFileName = ".\transfer.key", 
+    [String] $ReconcileFileName, 
+    [String] $SecretFileName, 
     [switch] $ExcludeHash,
     [switch] $Install7zip
 )
@@ -133,10 +134,9 @@ function Invoke-Pack
 {
 Param( 
     [String] $TransferFolder,
-    [String] $ToName,
+    [String] $Secret,
     [String] $CompressFile,
-    [String] $ReconcileFile,
-    [String] $SecretEncrypted
+    [String] $ReconcileFile
 ) 
     # Send
     If (!(Test-Path -Path $transferFolder )) {    
@@ -156,27 +156,16 @@ Param(
         $reconcileFile = $default_reconcileFile
     }
 
-    if ($secretEncrypted -eq "")
-    {
-        $secretEncrypted = $default_secretEncrypted
-    }
-
-    # First step - create protected secret
-    $secret = New-RandomPassword -Length 80
-    Protect-CmsMessage -To $toName -OutFile $secretEncrypted -Content $secret
-
-    # Second step - compress the data files
     Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip 
 
-    # Third step - create the reconcile file
     Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder
 
-    # Fourth step - add reconcile file to ZIP and encrypt
     Write-Log "Add reconcile file '$reconcileFile' to file '$compressFile'"
     $fullReconcileName = (Get-Item $reconcileFile).FullName
     $fullZipName = (Get-Item $compressFile).FullName
     Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
     Remove-Item $fullReconcileName
+
     Write-Log "Package ready in file '$compressFile' from folder '$transferFolder'"
     Write-Host "Package ready in file '$compressFile' from folder '$transferFolder'"  -ForegroundColor Green
 }
@@ -186,11 +175,10 @@ function Invoke-Unpack
 {
 Param( 
     [String] $RestoreFolder,
-    [String] $ToName,
-    [String] $CompressFile,
-    [String] $SecretEncrypted
+    [String] $Secret,
+    [String] $CompressFile
 ) 
-    # Receive
+
     If (!(Test-Path -Path $CompressFile )) {    
         Write-Log "Transfer/compress file '$CompressFile' does not exist"
         Write-Host "Transfer/compress file '$CompressFile' does not exist" -ForegroundColor Red
@@ -198,17 +186,10 @@ Param(
         return
     }
 
-    if ($secretEncrypted -eq "")
-    {
-        $secretEncrypted = $default_secretEncrypted
-    }
-
-    # First step - decrypt password for uncompressing
     Write-Log "Restoring files transferred to '$restoreFolder'"
     Write-Log "Package/Compress file is '$compressFile'"
-    $secret = Unprotect-CmsMessage -To $toName -Path $secretEncrypted
 
-    # Second step - uncompress the data files
+    # Uncompress the data files
     Expand-7Zip -ArchiveFileName $compressFile -TargetPath $restoreFolder -Password $secret
     Write-Log "Package unpacked from file '$compressFile' to folder '$restoreFolder'"
     Write-Host "Package unpacked from file '$compressFile' to folder '$restoreFolder'" -ForegroundColor Green
@@ -222,6 +203,11 @@ Param(
     [Parameter(Mandatory)][String] $reconcileFileName,
     [Parameter(Mandatory)][String] $folderName
 ) 
+
+    if ($reconcileFileName -eq "")
+    {
+        $reconcileFileName = $default_reconcileFile
+    }
 
     Write-Log "Reconciling documents transferred"
     Write-Host "Reconciling documents transferred"
@@ -285,9 +271,9 @@ $actioned = $false
 
 if ($action -eq "Pack") {
     $actioned = $true
-    if ($RecipientKeyName -eq "") {
-        Write-Log "Recipient Key Name required for packing" 
-        Write-Host "Recipient Key Name required for packing"  -ForegroundColor Red
+    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+        Write-Log "Recipient Key Name or Secret Key required for packing" 
+        Write-Host "Recipient Key Name or Secret Key required for packing"  -ForegroundColor Red
         Close-Log
         return
     } 
@@ -295,17 +281,27 @@ if ($action -eq "Pack") {
     if ($TransferFileName -eq "") {
         $TransferFileName = ".\transfer_protect_$default_dateLocal.7z"
     }
-    
-    Invoke-Pack -TransferFolder $path -ToName $recipientKeyName -CompressFile $transferFileName -ReconcileFile $reconcileFileName -SecretEncrypted $secretFileName
-    
+
+    if ($SecretKey -eq "") {
+        if ($secretFileName -eq "")
+        {
+            $secretFileName = $default_secretEncrypted
+        }
+        $secret = New-RandomPassword -Length 80
+        Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret
+    } else {
+        $secret = $SecretKey
+    }
+
+    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $transferFileName -ReconcileFile $reconcileFileName    
 }
 
 
 if ($action -eq "Unpack") {
     $actioned = $true
-    if ($RecipientKeyName -eq "") {
-        Write-Log "Recipient Key Name required for unpacking" 
-        Write-Host "Recipient Key Name required for unpacking" -ForegroundColor Red
+    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+        Write-Log "Recipient Key Name or Secret Key required for unpacking" 
+        Write-Host "Recipient Key Name or Secret Key required for unpacking" -ForegroundColor Red
         Close-Log
         return
     } 
@@ -316,19 +312,36 @@ if ($action -eq "Unpack") {
             return
     } 
     
-    Invoke-Unpack -RestoreFolder $path -ToName $recipientKeyName -CompressFile $transferFileName
+    if ($SecretKey -eq "") {
+        if ($secretFileName -eq "")
+        {
+            $secretFileName = $default_secretEncrypted
+        }
+        $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
+    } else {
+        $secret = $SecretKey
+    }
+    Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $transferFileName
     
 }
 
 
 if ($action -eq "ReconcileFile") {
     $actioned = $true
+    if ($reconcileFileName -eq "")
+    {
+        $reconcileFileName = $default_reconcileFile
+    }
     Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback 
 }
 
 
 if ($action -eq "Reconcile") {
     $actioned = $true
+    if ($reconcileFileName -eq "")
+    {
+        $reconcileFileName = $default_reconcileFile
+    }
     $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
     Invoke-Reconcile -ReconcileFile $localReconcileFile -FolderName $path
 }
