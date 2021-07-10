@@ -8,8 +8,8 @@ param (
     [String] $TransferFileName, 
     [String] $ReconcileFileName, 
     [String] $SecretFileName, 
-    [switch] $ExcludeHash,
-    [switch] $Install7zip
+    [switch] $ExcludeHash
+
 )
 
 $default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
@@ -50,9 +50,9 @@ function Close-Log {
 
 function New-RandomPassword {
 param(
-    [int]$length = 20,
-    [String]$characters = "abcdefghiklmnoprstuvwxyzABCDEFGHKLMNOPRSTUVWXYZ1234567890!()?}][{@#*+-",
-    [switch]$ConvertToSecureString
+    [int] $length = 20,
+    [String] $characters = "abcdefghiklmnoprstuvwxyzABCDEFGHKLMNOPRSTUVWXYZ1234567890!()?}][{@#*+-",
+    [switch] $ConvertToSecureString
 )
     $password = 1..$length | ForEach-Object { Get-Random -Maximum $characters.length }
     $private:ofs=""
@@ -71,7 +71,8 @@ function Set-Reconcile
 Param( 
     [Parameter(Mandatory)][String] $ReconcileFile,
     [Parameter(Mandatory)][String] $FolderName,
-    [switch]$Feedback = $false
+    [String] $Filter,
+    [switch] $Feedback = $false
 ) 
 
     if ($reconcileFile -eq "")
@@ -134,6 +135,7 @@ function Invoke-Pack
 {
 Param( 
     [String] $TransferFolder,
+    [String] $Filter,
     [String] $Secret,
     [String] $CompressFile,
     [String] $ReconcileFile
@@ -156,15 +158,29 @@ Param(
         $reconcileFile = $default_reconcileFile
     }
 
-    Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip 
 
-    Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder
+#    $Files = Get-ChildItem -Path “D:\Logs_folder” -Filter “*.txt” -Recurse -File | Where-Object {$_.LastWriteTime -le $LastWrite}
+
+    $firstPack = $true
+    Write-Host "Folder $transferFolder"
+    Get-ChildItem -Path $transferFolder -Filter "*20*" -Recurse | Where-Object {$_.PSIsContainer} | ForEach-Object {
+        Write-Log "File found $($_.FullName)"
+        if ($firstPack) {
+            $firstPack = $false
+            Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip
+        } else {
+            Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -Append
+        }
+    }
+#    Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip -Append
+
+    #Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder -Filter $filter
 
     Write-Log "Add reconcile file '$reconcileFile' to file '$compressFile'"
-    $fullReconcileName = (Get-Item $reconcileFile).FullName
-    $fullZipName = (Get-Item $compressFile).FullName
-    Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
-    Remove-Item $fullReconcileName
+#    $fullReconcileName = (Get-Item $reconcileFile).FullName
+#    $fullZipName = (Get-Item $compressFile).FullName
+#    Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
+#    Remove-Item $fullReconcileName
 
     Write-Log "Package ready in file '$compressFile' from folder '$transferFolder'"
     Write-Host "Package ready in file '$compressFile' from folder '$transferFolder'"  -ForegroundColor Green
@@ -201,7 +217,8 @@ function Invoke-Reconcile
 {
 Param( 
     [Parameter(Mandatory)][String] $reconcileFileName,
-    [Parameter(Mandatory)][String] $folderName
+    [Parameter(Mandatory)][String] $folderName,
+    [String] $Filter
 ) 
 
     if ($reconcileFileName -eq "")
@@ -263,11 +280,13 @@ Write-Log "*********************************************************************
 Write-Log "*   Start of processing: [$dateTimeStart]"
 Write-Log "***********************************************************************************"
 
-if ($install7zip) {
-    Install-Module -Name 7Zip4Powershell -Scope CurrentUser
-}
 
 $actioned = $false
+
+if ($action -eq "Install") {
+    $actioned = $true
+    Install-Module -Name 7Zip4Powershell -Scope CurrentUser
+}
 
 if ($action -eq "Pack") {
     $actioned = $true
@@ -356,6 +375,7 @@ if (!($actioned))
     Write-Host "    Unpack        : Unpack folder contents from secure 7Zip file"
     Write-Host "    Reconcile     : Reconcile files in unpack folder with list of packed files"
     Write-Host "    ReconcileFile : Generate a reconcile file without packing"
+    Write-Host "    Install       : Install required packages"
 }
 
 Close-Log
