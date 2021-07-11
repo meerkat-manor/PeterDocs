@@ -46,11 +46,12 @@
 
  .Parameter Action
   Action to perform, which can be:
-  - Install
-  - Pack
-  - Unpack
-  - Reconcile
-  - ReconcileFile
+  - Install             : Install 7Zip4PowerShell
+  - Pack                : Archive the contents of a folder(s)
+  - Unpack              : Unpack the archive, but no reconfile is performed
+  - Reconcile           : Reconcile the contents in the restored folder
+  - ReconcileFile       : Generate reconfile file.  The pack process does this.
+  - ArchiveInformation  : Fetch archive information
 
  .Parameter Path
   The path to the files and folders to pack or the path to the unpack location. 
@@ -59,7 +60,13 @@
 
   When using the trailing * for names, the filtering is only applied to immediate
   folder names under the parent folder.  The filter does not cascade to lower folders.
-  
+
+  The Path can also be a file containing a list of paths, one per line.  To use a
+  list file, prefix the Path value with a "@" and name the file. Do not use a folder
+  for @ defined path.
+
+  A file (@ prefix) containing a list of paths cannot contain generic path names, that 
+  is paths with trailing wildcard of "*"
 
  .Parameter RecipientKeyName
   The recipient of the package which is used to find the appropriate
@@ -79,6 +86,8 @@
   or the SecretKey is required for packing or unpacking the 7ZIP file.  This method
   uses a symmetric cryptographic key exchange which is less secure then the 
   RecipientKeyName approach.
+
+  Note: Currently the script doe snot user Secure Strings
 
  .Parameter ArchiveFileName
   The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
@@ -337,31 +346,33 @@ Param(
         Write-Host "Using @ file '$($folderName.Substring(1))'"
 
         Get-Content -Path $($folderName.Substring(1)) | ForEach-Object {
-            If (!(Test-Path -Path $_ )) {    
-                Write-Log "Folder/file '$($_)' does not exist"
-                Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
-            }
-            else {
-                Get-ChildItem $_ -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+            if ($_ -ne "") {
+                If (!(Test-Path -Path $_ )) {    
+                    Write-Log "Folder/file '$($_)' does not exist"
+                    Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
+                }
+                else {
+                    Get-ChildItem $_ -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
 
-                    $totalFilecount = $totalFileCount + 1
-                    $totalFileSize = $totalFileSize + $_.Length 
-        
-                    if (($totalFilecount % $messageFrequency) -eq 0) {            
-                        Write-Log "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
-                        Write-Host "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                        $totalFilecount = $totalFileCount + 1
+                        $totalFileSize = $totalFileSize + $_.Length 
+            
+                        if (($totalFilecount % $messageFrequency) -eq 0) {            
+                            Write-Log "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                            Write-Host "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                        }
+            
+                        if ($ExcludeHash) {
+                            $sourceHash = ""
+                        } else {
+                            $sourceHash = (Get-FileHash -Path $_.FullName).Hash
+                        }
+                        $record = '"'+$_.FullName.Replace($rootFolderName, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+                        $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+                        $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
+                        Add-Content -Path  $reconcileFile  -Value $record
+                    
                     }
-        
-                    if ($ExcludeHash) {
-                        $sourceHash = ""
-                    } else {
-                        $sourceHash = (Get-FileHash -Path $_.FullName).Hash
-                    }
-                    $record = '"'+$_.FullName.Replace($rootFolderName, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
-                    $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
-                    $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
-                    Add-Content -Path  $reconcileFile  -Value $record
-                
                 }
             }
         }
@@ -458,7 +469,6 @@ Param(
     }
 
     Write-Log "Saving folders/files to archive file '$compressFile'"
-    Write-Log "Source folder is '$transferFolder'"
     Write-Host "Saving folders/files to archive file '$compressFile'"
 
     if ($reconcileFile -eq "")
@@ -473,6 +483,7 @@ Param(
 
     if ($transferFolder.EndsWith("*"))
     {
+        Write-Log "Archive primary folder is '$transferFolder'"
         $firstCompress = $true
 
         Get-ChildItem $transferFolder| ForEach-Object {
@@ -501,28 +512,30 @@ Param(
             Write-Host "Using @ file '$($transferFolder.Substring(1))'"
 
             Get-Content -Path $($transferFolder.Substring(1)) | ForEach-Object {
-                If (!(Test-Path -Path $_ )) {    
-                    Write-Log "Folder/file '$($_)' does not exist"
-                    Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
-                }
-                else {
-                    Write-Log "Archive folder '$($_)'"
-                    Write-Host "Archivefolder '$($_)'"
-                    if (Test-Files -FolderName $_ -FileFilter $fileFilter) {
-                        try {
-                            if ($firstCompress) {
-                                Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
-                            } else {
-                                Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
+                if ($_ -ne "") {
+                    If (!(Test-Path -Path $_ )) {    
+                        Write-Log "Folder/file '$($_)' does not exist"
+                        Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
+                    }
+                    else {
+                        Write-Log "Archive folder '$($_)'"
+                        Write-Host "Archivefolder '$($_)'"
+                        if (Test-Files -FolderName $_ -FileFilter $fileFilter) {
+                            try {
+                                if ($firstCompress) {
+                                    Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
+                                } else {
+                                    Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
+                                }
+                                $firstCompress = $false
+                            } catch {
+                                Write-Log "Compress error with file '$($_)'.  See any previous errors.  $Error"
+                                Write-Host "Compress error with file '$($_)'.  See any previous errors.  $Error" -ForegroundColor Red
                             }
-                            $firstCompress = $false
-                        } catch {
-                            Write-Log "Compress error with file '$($_)'.  See any previous errors.  $Error"
-                            Write-Host "Compress error with file '$($_)'.  See any previous errors.  $Error" -ForegroundColor Red
+                        } else {
+                            Write-Log "Empty folder '$($_.FullName)'"
+                            Write-Host "Empty folder '$($_.FullName)'"
                         }
-                    } else {
-                        Write-Log "Empty folder '$($_.FullName)'"
-                        Write-Host "Empty folder '$($_.FullName)'"
                     }
                 }
             }
@@ -590,7 +603,8 @@ function Invoke-Reconcile
 Param( 
     [Parameter(Mandatory)][String] $ReconcileFile,
     [Parameter(Mandatory)][String] $Folder,
-    [String] $TargetReconcileFile
+    [String] $TargetReconcileFile,
+    [Switch] $ExtendedCheck
 ) 
 
     if ($reconcileFile -eq "")
@@ -617,6 +631,7 @@ Param(
     $totalFileCount = 0
     $totalFileSize = 0
     $errorCount = 0
+    $missingFileCount = 0
     $missingHash = $false
 
     # For each entry in the reconcile file
@@ -629,17 +644,35 @@ Param(
                 $targetHash= (Get-FileHash -Path $restoreFileName).Hash
                 if ($_.Hash -ne $targetHash) {
                     $errorCount = $errorCount + 1
-                    Write-Log "Hash mismatch for file '$restoreFileName'"
+                    Write-Log "Hash mismatch for file '$restoreFileName' with target value $targetHash"
                 }
             } else {
                 $missingHash = $true
             }
-            if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
+            if ((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
                 $errorCount = $errorCount + 1
-                Write-Log "Last write mismatch for file '$restoreFileName'"
+                Write-Log "Creation mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
             }
+            if ((Get-Item -Path $restoreFileName).Length -ne $_.Length) {
+                $errorCount = $errorCount + 1
+                Write-Log "Length mismatch for file '$restoreFileName' with target value $(Get-Item -Path $restoreFileName).Length)"
+            }
+
+            # Note that last / write access time is not checked by default as it will comonly be changed after restore
+            if ($extendedCheck) {
+                if ((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastAccessTime) {
+                    $errorCount = $errorCount + 1
+                    Write-Log "Last access mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                }
+                if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
+                    $errorCount = $errorCount + 1
+                    Write-Log "Last write mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                }
+            }
+
             $totalFileSize = $totalFileSize + (Get-Item -Path $restoreFileName).Length             
         } else {
+            $missingFileCount = $missingFileCount + 1
             $errorCount = $errorCount + 1
             Write-Log "Non existant target file '$restoreFileName'"
         }
@@ -648,16 +681,22 @@ Param(
     Write-Log "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize ) ($totalFileSize)"
     Write-Host "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize )"
 
-    Write-Log "Total file count is $totalFileCount with $errorCount errors"
     if ($missingHash)
     {
         Write-Log "Reconcile file had one or many or all blank hash entries"
         Write-Host "Reconcile file had one or many or all blank hash entries"  -ForegroundColor Yellow
     }
+
+    Write-Log "Total file count is $totalFileCount with $errorCount errors"
+    Write-Log "There are $missingFileCount missing files"
+
     if ($errorCount -gt 0) {
         Write-Host "Total file count is $totalFileCount with $errorCount errors" -ForegroundColor Red
     } else {
         Write-Host "Total file count is $totalFileCount with $errorCount errors"  -ForegroundColor Green
+    }
+    if ($missingFileCount -gt 0) {
+        Write-Host "There are $missingFileCount missing files" -ForegroundColor Red
     }
 }
 
@@ -770,17 +809,43 @@ if ($action -eq "Reconcile") {
     Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path
 }
 
+if ($action -eq "ArchiveInformation") {
+    $actioned = $true
+    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+        Write-Log "Recipient Key Name or Secret Key required for 7Zip information" 
+        Write-Host "Recipient Key Name or Secret Key required for 7Zip information"  -ForegroundColor Red
+        Close-Log
+        return
+    } 
+    
+    if ($SecretKey -eq "") {
+        if ($secretFileName -eq "")
+        {
+            $secretFileName = $default_secretEncrypted
+        }
+        $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
+    } else {
+        $secret = $SecretKey
+    }
+    Write-Log "Retrieving archive information"
+    Write-Host "Retrieving archive information"
+    
+    Get-7ZipInformation -ArchiveFileName $ArchiveFileName -Password $secret
+}
+
 
 if (!($actioned))
 {
     Write-Log "Unknown action '$action'.  No processing performed" 
     Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
     Write-Host "Recognised actions: "
-    Write-Host "    Pack          : Pack folder contents into secure 7Zip file"
-    Write-Host "    Unpack        : Unpack folder contents from secure 7Zip file"
-    Write-Host "    Reconcile     : Reconcile files in unpack folder with list of packed files"
-    Write-Host "    ReconcileFile : Generate a reconcile file without packing"
-    Write-Host "    Install       : Install required packages"
+    Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
+    Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
+    Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
+    Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
+    Write-Host "    Install              : Install required packages"
+    Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
+    
     Write-Host ""
     Write-Host "For help use command "
     Write-Host "    Get-Help .\ptrFiles.ps1"
