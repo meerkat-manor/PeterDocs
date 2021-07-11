@@ -80,7 +80,7 @@
   uses a symmetric cryptographic key exchange which is less secure then the 
   RecipientKeyName approach.
 
- .Parameter TransferFileName
+ .Parameter ArchiveFileName
   The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
   will be generated in the current directory.
 
@@ -149,7 +149,7 @@
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
    # You will need the file named ".\transfer.key" to unpack the encrypted 7ZIP file
-   .\ptrFiles.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
+   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
  
  .Example
    # Reconcile files in folder ".\targetdir"
@@ -161,7 +161,7 @@
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a password
-   .\ptrFiles.ps1 -Action unpack -TransferFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
+   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\02*" where the folder name starts with "02" using a password
@@ -174,7 +174,7 @@ param (
     [Parameter(Mandatory)][String] $Path, 
     [String] $RecipientKeyName,
     [String] $SecretKey, 
-    [String] $TransferFileName, 
+    [String] $ArchiveFileName, 
     [String] $RootFolderName,
     [String] $FileFilter,
     [String] $ReconcileFileName, 
@@ -254,6 +254,34 @@ function Test-Files
     return $false
 }
 
+function Get-ConvenientFileSize
+{
+    Param( 
+        [Parameter(Mandatory)][long] $Size
+    ) 
+ 
+    
+    if ($totalFileSize -ge 1000000000000) {
+        $totalRightLabel = "TB"
+        $totalFileXbytes = [math]::Round(($size / 1000000000000), 2)        
+    } else {
+        if ($totalFileSize -ge 1000000000) {
+            $totalRightLabel = "GB"
+            $totalFileXbytes = [math]::Round(($size / 1000000000), 2)        
+        } else { 
+            if ($totalFileSize -ge 1000000) {
+                $totalRightLabel = "MB"
+                $totalFileXbytes = [math]::Round(($size / 1000000), 2)        
+            } else {
+                $totalRightLabel = "KB"
+                $totalFileXbytes = [math]::Round(($size / 1000), 2)
+            }
+        }
+    }
+
+    return $totalFileXbytes.ToString() + " " + $totalRightLabel
+}
+
 # Reconcile
 function Set-Reconcile
 {
@@ -270,11 +298,20 @@ Param(
         $reconcileFile = $default_reconcileFile
     }
 
-    If (!(Test-Path -Path $folderName )) {    
-        Write-Log "Folder '$folderName' does not exist"
-        Write-Host "Folder '$folderName' does not exist" -ForegroundColor Red
-        Close-Log
-        Exit
+    if ($folderName.StartsWith("@")) {
+        If (!(Test-Path -Path $folderName.Substring(1) )) {    
+            Write-Log "File '$($folderName.Substring(1))' does not exist"
+            Write-Host "File '$($folderName.Substring(1))' does not exist" -ForegroundColor Red
+            Close-Log
+            Exit
+        }
+    } else {
+        If (!(Test-Path -Path $folderName )) {    
+            Write-Log "Folder '$folderName' does not exist"
+            Write-Host "Folder '$folderName' does not exist" -ForegroundColor Red
+            Close-Log
+            Exit
+        }
     }
 
     Write-Log "Generating reconciliation file '$reconcileFile'"
@@ -286,43 +323,111 @@ Param(
     if ($rootFolderName -eq "") {
         $rootFolderName = $folderName
     }
-
-    Set-Content -Path $reconcileFile  -Value '"FullName","LastWriteTime","Length","Hash","ParentFolder","Object"'
-    Get-ChildItem $folderName -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
-        $totalFilecount = $totalFileCount + 1
-        $totalFileSize = $totalFileSize + $_.Length 
-        if ($ExcludeHash) {
-            $sourceHash = ""
-        } else {
-            $sourceHash = (Get-FileHash -Path $_.FullName).Hash
-        }
-        $record = '"'+$_.FullName.Replace($rootFolderName, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'",'+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '"'
-        Add-Content -Path  $reconcileFile  -Value $record
+    if ($ExcludeHash) {
+        $messageFrequency = 1000
+    } else {
+        $messageFrequency = 500
     }
 
-    if ($totalFileSize -ge 1000000000000) {
-        $totalRightLabel = "TB"
-        $totalFileXbytes = [math]::Round(($totalFileSize / 1000000000000), 2)        
-    } else {
-        if ($totalFileSize -ge 1000000000) {
-            $totalRightLabel = "GB"
-            $totalFileXbytes = [math]::Round(($totalFileSize / 1000000000), 2)        
-        } else { 
-            if ($totalFileSize -ge 1000000) {
-                $totalRightLabel = "MB"
-                $totalFileXbytes = [math]::Round(($totalFileSize / 1000000), 2)        
-            } else {
-                $totalRightLabel = "KB"
-                $totalFileXbytes = [math]::Round(($totalFileSize / 1000), 2)
+
+    Set-Content -Path $reconcileFile  -Value '"FullName","LastWriteTime","CreationTime","LastAccessTime","Length","Hash","ParentFolder","Object","Attributes","Extension"'
+
+    if ($folderName.StartsWith("@")) {
+        Write-Log "Using @ file '$($folderName.Substring(1))'"
+        Write-Host "Using @ file '$($folderName.Substring(1))'"
+
+        Get-Content -Path $($folderName.Substring(1)) | ForEach-Object {
+            If (!(Test-Path -Path $_ )) {    
+                Write-Log "Folder/file '$($_)' does not exist"
+                Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
+            }
+            else {
+                Get-ChildItem $_ -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+
+                    $totalFilecount = $totalFileCount + 1
+                    $totalFileSize = $totalFileSize + $_.Length 
+        
+                    if (($totalFilecount % $messageFrequency) -eq 0) {            
+                        Write-Log "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                        Write-Host "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                    }
+        
+                    if ($ExcludeHash) {
+                        $sourceHash = ""
+                    } else {
+                        $sourceHash = (Get-FileHash -Path $_.FullName).Hash
+                    }
+                    $record = '"'+$_.FullName.Replace($rootFolderName, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+                    $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+                    $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
+                    Add-Content -Path  $reconcileFile  -Value $record
+                
+                }
             }
         }
+
+    } else {
+        Get-ChildItem $folderName -Filter $fileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+
+            $totalFilecount = $totalFileCount + 1
+            $totalFileSize = $totalFileSize + $_.Length 
+
+            if (($totalFilecount % $messageFrequency) -eq 0) {            
+                Write-Log "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+                Write-Host "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$($_.Directory)' " 
+            }
+
+            if ($ExcludeHash) {
+                $sourceHash = ""
+            } else {
+                $sourceHash = (Get-FileHash -Path $_.FullName).Hash
+            }
+            $record = '"'+$_.FullName.Replace($rootFolderName, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+            $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
+            $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
+            Add-Content -Path  $reconcileFile  -Value $record
+        
+        }
+
     }
 
-    Write-Log "Total reconcile file count is $totalFileCount and size $totalFileXbytes $totalRightLabel ($totalFileSize)"
+    Write-Log "Total reconcile file count is $totalFileCount and size $(Get-ConvenientFileSize -Size $totalFileSize ) ($totalFileSize)"
     if ($feedback) {
-        Write-Host "Total reconcile file count is $totalFileCount and size $totalFileXbytes $totalRightLabel" -ForegroundColor Green
+        Write-Host "Total reconcile file count is $totalFileCount and size $(Get-ConvenientFileSize -Size $totalFileSize )" -ForegroundColor Green
     }
 }
+
+function Invoke-SinglePack
+{
+    Param( 
+        [String] $ArchiveFolder,
+        [String] $ArchiveFile,
+        [String] $FileFilter,
+        [Boolean] $FirstCompress
+    ) 
+
+    Write-Log "Archive folder '$ArchiveFolder'"
+    Write-Host "Archivefolder '$ArchiveFolder'"
+    if (Test-Files -FolderName $ArchiveFolder -FileFilter $FileFilter) {
+        try {
+            if ($FirstCompress) {
+                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFile -Format SevenZip -PreserveDirectoryRoot -Filter $FileFilter   
+            } else {
+                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFile -Format SevenZip -PreserveDirectoryRoot -Filter $FileFilter -Append    
+            }
+            $FirstCompress = $false
+        } catch {
+            Write-Log "Compress error with file '$ArchiveFolder'.  See any previous errors.  $Error"
+            Write-Host "Compress error with file '$ArchiveFolder'.  See any previous errors.  $Error" -ForegroundColor Red
+        }
+    } else {
+        Write-Log "Empty folder '$ArchiveFolder'"
+        Write-Host "Empty folder '$ArchiveFolder'"
+    }
+
+    return $FirstCompress
+}
+
 
 # Compress / Package
 function Invoke-Pack
@@ -336,11 +441,20 @@ Param(
     [String] $ReconcileFile
 ) 
 
-    If (!(Test-Path -Path $transferFolder )) {    
-        Write-Log "Folder '$transferFolder' does not exist"
-        Write-Host "Folder '$transferFolder' does not exist" -ForegroundColor Red
-        Close-Log
-        Exit
+    if ($transferFolder.StartsWith("@")) {
+        If (!(Test-Path -Path $transferFolder.Substring(1) )) {    
+            Write-Log "File '$($transferFolder.Substring(1))' does not exist"
+            Write-Host "File '$($transferFolder.Substring(1))' does not exist" -ForegroundColor Red
+            Close-Log
+            Exit
+        }
+    } else {
+        If (!(Test-Path -Path $transferFolder )) {    
+            Write-Log "Folder '$transferFolder' does not exist"
+            Write-Host "Folder '$transferFolder' does not exist" -ForegroundColor Red
+            Close-Log
+            Exit
+        }
     }
 
     Write-Log "Saving folders/files to archive file '$compressFile'"
@@ -382,9 +496,41 @@ Param(
             }
         }
     } else {
-        Write-Log "Archive folder '$transferFolder'"
-        Write-Host "Archive folder '$transferFolder'"
-        Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip -Filter $fileFilter    
+        if ($transferFolder.StartsWith("@")) {
+            Write-Log "Using @ file '$($transferFolder.Substring(1))'"
+            Write-Host "Using @ file '$($transferFolder.Substring(1))'"
+
+            Get-Content -Path $($transferFolder.Substring(1)) | ForEach-Object {
+                If (!(Test-Path -Path $_ )) {    
+                    Write-Log "Folder/file '$($_)' does not exist"
+                    Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
+                }
+                else {
+                    Write-Log "Archive folder '$($_)'"
+                    Write-Host "Archivefolder '$($_)'"
+                    if (Test-Files -FolderName $_ -FileFilter $fileFilter) {
+                        try {
+                            if ($firstCompress) {
+                                Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
+                            } else {
+                                Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
+                            }
+                            $firstCompress = $false
+                        } catch {
+                            Write-Log "Compress error with file '$($_)'.  See any previous errors.  $Error"
+                            Write-Host "Compress error with file '$($_)'.  See any previous errors.  $Error" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Log "Empty folder '$($_.FullName)'"
+                        Write-Host "Empty folder '$($_.FullName)'"
+                    }
+                }
+            }
+        } else {
+            Write-Log "Archive folder '$transferFolder'"
+            Write-Host "Archive folder '$transferFolder'"
+            Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip -Filter $fileFilter    
+        }
     }
 
     If (!(Test-Path -Path $compressFile )) {    
@@ -499,25 +645,8 @@ Param(
         }
     }
 
-    if ($totalFileSize -ge 1000000000000) {
-        $totalRightLabel = "TB"
-        $totalFileXbytes = [math]::Round(($totalFileSize / 1000000000000), 2)        
-    } else {
-        if ($totalFileSize -ge 1000000000) {
-            $totalRightLabel = "GB"
-            $totalFileXbytes = [math]::Round(($totalFileSize / 1000000000), 2)        
-        } else { 
-            if ($totalFileSize -ge 1000000) {
-                $totalRightLabel = "MB"
-                $totalFileXbytes = [math]::Round(($totalFileSize / 1000000), 2)        
-            } else {
-                $totalRightLabel = "KB"
-                $totalFileXbytes = [math]::Round(($totalFileSize / 1000), 2)
-            }
-        }
-    }
-    Write-Log "Total file storage size is $totalFileXbytes $totalRightLabel ($totalFileSize)"
-    Write-Host "Total file storage size is $totalFileXbytes $totalRightLabel"
+    Write-Log "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize ) ($totalFileSize)"
+    Write-Host "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize )"
 
     Write-Log "Total file count is $totalFileCount with $errorCount errors"
     if ($missingHash)
@@ -539,6 +668,14 @@ Write-Log "*********************************************************************
 
 
 $actioned = $false
+
+Write-Log "Script parameters follow"
+ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
+{
+    Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
+#  'Key={0} Value={1}' -f $boundParam.Key, $boundParam.Value | Write-Log
+}
+Write-Log ""
 
 if ($action -eq "Install") {
     $actioned = $true
@@ -565,8 +702,8 @@ if ($action -eq "Pack") {
         }
     }
 
-    if ($TransferFileName -eq "") {
-        $TransferFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
+    if ($ArchiveFileName -eq "") {
+        $ArchiveFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
     }
 
     if ($SecretKey -eq "") {
@@ -580,7 +717,7 @@ if ($action -eq "Pack") {
         $secret = $SecretKey
     }
 
-    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $transferFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
+    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $ArchiveFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
 }
 
 
@@ -592,7 +729,7 @@ if ($action -eq "Unpack") {
         Close-Log
         return
     } 
-    if ($TransferFileName -eq "") {
+    if ($ArchiveFileName -eq "") {
             Write-Log "Archive file Name required for unpacking" 
             Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
             Close-Log
@@ -608,7 +745,7 @@ if ($action -eq "Unpack") {
     } else {
         $secret = $SecretKey
     }
-    Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $transferFileName
+    Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $ArchiveFileName
     
 }
 
@@ -644,6 +781,9 @@ if (!($actioned))
     Write-Host "    Reconcile     : Reconcile files in unpack folder with list of packed files"
     Write-Host "    ReconcileFile : Generate a reconcile file without packing"
     Write-Host "    Install       : Install required packages"
+    Write-Host ""
+    Write-Host "For help use command "
+    Write-Host "    Get-Help .\ptrFiles.ps1"
 }
 
 Close-Log
