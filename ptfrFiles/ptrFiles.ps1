@@ -61,6 +61,9 @@
   When using the trailing * for names, the filtering is only applied to immediate
   folder names under the parent folder.  The filter does not cascade to lower folders.
 
+  The path can be a local drive, mapped network drive or a network shared folder
+  location such as \\stora\MyLibrary.
+
   The Path can also be a file containing a list of paths, one per line.  To use a
   list file, prefix the Path value with a "@" and name the file. Do not use a folder
   for @ defined path.
@@ -91,9 +94,11 @@
 
  .Parameter ArchiveFileName
   The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
-  will be generated in the current directory.
+  will be generated in the current directory for the pack action.
 
   The default name will take the form ".\transfer_protect_yyyyMMdd_hhmm.7z"
+
+  For unpack actions, the archive file name parameter is mandatory.
 
  .Parameter RootFolderName
   The root folder, which should be used if using wildcard (*) for the
@@ -124,6 +129,19 @@
 
   The default name is ".\transfer.key"
 
+ .Parameter BucketName
+  When transferring archive file to cloud the destination bucket name 
+  for those transfer locations supporting it.
+  Bucket name can also be specifed with Environment variable 
+  "PTRFILES_BUCKETNAME"
+
+ .Parameter Profile
+  The profile name to use for Install and Transfer actions.  The
+  default for Install is "UserScope".  The default for "Transfer"
+  is "default"
+  Profile name can also be specifed with Environment variable 
+  "PTRFILES_PROFILE"
+
  .Parameter ExcludeHash
   Exclude the file hash from the reconcile file.  As producing a file
   hash takes compute cycles during pack, you can select to bypass this 
@@ -149,6 +167,12 @@
   If you need to copy files from one directory to another accessible directory from
   your Windows desktop, you might consider using ROBOCOPY.  If the target directory
   is not accessible and you want to reconcile, then this tool is appropriate. 
+
+  The following environment variables are supported:
+  - PTRFILES_RECIPIENTKEYNAME
+  - PTRFILES_PROFILE
+  - PTRFILES_BUCKETNAME
+
  
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
@@ -188,6 +212,8 @@ param (
     [String] $FileFilter,
     [String] $ReconcileFileName, 
     [String] $SecretFileName, 
+    [String] $BucketName,
+    [String] $Profile,
     [switch] $ExcludeHash,
     [String] $LogPath
 
@@ -197,7 +223,7 @@ $default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
 $default_archiveFile = ".\ptr_file_##date##.7z"
 $default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
 $default_secretEncrypted = ".\transfer.key"
-
+$default_profile = "default"
 
 function Write-Log {
     param(
@@ -233,6 +259,10 @@ function Close-Log {
     Write-Log "***********************************************************************************"
 }
 
+function Get-SoftwareName {
+    return [String] "PTRFILES"
+}
+
 function New-RandomPassword {
 param(
     [int] $length = 20,
@@ -249,7 +279,7 @@ param(
     }
 }
 
-function Test-Files
+function Test-FilesExist
 {
     Param( 
         [Parameter(Mandatory)][String] $FolderName,
@@ -411,15 +441,17 @@ Param(
 function Invoke-SinglePack
 {
     Param( 
-        [String] $ArchiveFolder,
-        [String] $ArchiveFile,
+        [Parameter(Mandatory)][String] $ArchiveFolder,
+        [Parameter(Mandatory)][String] $ArchiveFile,
         [String] $FileFilter,
         [Boolean] $FirstCompress
     ) 
 
-    Write-Log "Archive folder '$ArchiveFolder'"
-    Write-Host "Archivefolder '$ArchiveFolder'"
-    if (Test-Files -FolderName $ArchiveFolder -FileFilter $FileFilter) {
+    if (!(Test-Path -Path $ArchiveFolder -PathType Leaf)) {
+        Write-Log "Archive folder '$ArchiveFolder'"
+        Write-Host "Archivefolder '$ArchiveFolder'"
+    }
+    if (Test-FilesExist -FolderName $ArchiveFolder -FileFilter $FileFilter) {
         try {
             if ($FirstCompress) {
                 Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFile -Format SevenZip -PreserveDirectoryRoot -Filter $FileFilter   
@@ -428,12 +460,12 @@ function Invoke-SinglePack
             }
             $FirstCompress = $false
         } catch {
-            Write-Log "Compress error with file '$ArchiveFolder'.  See any previous errors.  $Error"
-            Write-Host "Compress error with file '$ArchiveFolder'.  See any previous errors.  $Error" -ForegroundColor Red
+            Write-Log "Compress error with folder/file '$ArchiveFolder'.  See any previous errors.  $Error"
+            Write-Host "Compress error with folder/file '$ArchiveFolder'.  See any previous errors.  $Error" -ForegroundColor Red
         }
     } else {
-        Write-Log "Empty folder '$ArchiveFolder'"
-        Write-Host "Empty folder '$ArchiveFolder'"
+        Write-Log "Empty folder/file '$ArchiveFolder'"
+        Write-Host "Empty folder/file '$ArchiveFolder'"
     }
 
     return $FirstCompress
@@ -444,11 +476,11 @@ function Invoke-SinglePack
 function Invoke-Pack
 {
 Param( 
-    [String] $TransferFolder,
+    [Parameter(Mandatory)][String] $TransferFolder,
     [String] $RootFolder,
     [String] $FileFilter,
-    [String] $Secret,
-    [String] $CompressFile,
+    [Parameter(Mandatory)][String] $Secret,
+    [Parameter(Mandatory)][String] $CompressFile,
     [String] $ReconcileFile
 ) 
 
@@ -485,56 +517,30 @@ Param(
     {
         Write-Log "Archive primary folder is '$transferFolder'"
         $firstCompress = $true
-
         Get-ChildItem $transferFolder| ForEach-Object {
-            Write-Log "Archive folder '$($_.FullName)'"
-            Write-Host "Archivefolder '$($_.FullName)'"
-            if (Test-Files -FolderName $_.FullName -FileFilter $fileFilter) {
-                try {
-                    if ($firstCompress) {
-                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
-                    } else {
-                        Compress-7Zip -Path $_.FullName -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
-                    }
-                    $firstCompress = $false
-                } catch {
-                    Write-Log "Compress error with file '$($_.FullName)'.  See any previous errors.  $Error"
-                    Write-Host "Compress error with file '$($_.FullName)'.  See any previous errors.  $Error" -ForegroundColor Red
-                }
-            } else {
-                Write-Log "Empty folder '$($_.FullName)'"
-                Write-Host "Empty folder '$($_.FullName)'"
-            }
+            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
         }
     } else {
         if ($transferFolder.StartsWith("@")) {
             Write-Log "Using @ file '$($transferFolder.Substring(1))'"
             Write-Host "Using @ file '$($transferFolder.Substring(1))'"
+            $firstCompress = $true
 
             Get-Content -Path $($transferFolder.Substring(1)) | ForEach-Object {
                 if ($_ -ne "") {
-                    If (!(Test-Path -Path $_ )) {    
-                        Write-Log "Folder/file '$($_)' does not exist"
-                        Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
-                    }
-                    else {
-                        Write-Log "Archive folder '$($_)'"
-                        Write-Host "Archivefolder '$($_)'"
-                        if (Test-Files -FolderName $_ -FileFilter $fileFilter) {
-                            try {
-                                if ($firstCompress) {
-                                    Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter   
-                                } else {
-                                    Compress-7Zip -Path $_ -ArchiveFileName $compressFile -Format SevenZip -PreserveDirectoryRoot -Filter $fileFilter -Append    
-                                }
-                                $firstCompress = $false
-                            } catch {
-                                Write-Log "Compress error with file '$($_)'.  See any previous errors.  $Error"
-                                Write-Host "Compress error with file '$($_)'.  See any previous errors.  $Error" -ForegroundColor Red
-                            }
-                        } else {
-                            Write-Log "Empty folder '$($_.FullName)'"
-                            Write-Host "Empty folder '$($_.FullName)'"
+
+                    if ($_.EndsWith("*")) {
+                        Get-ChildItem $_ | ForEach-Object {
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
+                        }
+                    } else {
+                
+                        If (!(Test-Path -Path $_ )) {    
+                            Write-Log "Folder/file '$($_)' does not exist"
+                            Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
+                        }
+                        else {
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_ -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
                         }
                     }
                 }
@@ -575,9 +581,9 @@ Param(
 function Invoke-Unpack
 {
 Param( 
-    [String] $RestoreFolder,
-    [String] $Secret,
-    [String] $CompressFile
+    [Parameter(Mandatory)][String] $RestoreFolder,
+    [Parameter(Mandatory)][String] $Secret,
+    [Parameter(Mandatory)][String] $CompressFile
 ) 
 
     If (!(Test-Path -Path $CompressFile )) {    
@@ -700,155 +706,322 @@ Param(
     }
 }
 
-$dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
-Write-Log "***********************************************************************************"
-Write-Log "*   Start of processing: [$dateTimeStart]"
-Write-Log "***********************************************************************************"
+
+# Main code logic starts here
+function Invoke-Main() {
 
 
-$actioned = $false
+    $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
+    Write-Log "***********************************************************************************"
+    Write-Log "*   Start of processing: [$dateTimeStart]"
+    Write-Log "***********************************************************************************"
 
-Write-Log "Script parameters follow"
-ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
-{
-    Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
-#  'Key={0} Value={1}' -f $boundParam.Key, $boundParam.Value | Write-Log
-}
-Write-Log ""
 
-if ($action -eq "Install") {
-    $actioned = $true
-    Install-Module -Name 7Zip4Powershell -Scope CurrentUser
-}
+    $actioned = $false
 
-if ($action -eq "Pack") {
-    $actioned = $true
-    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-        Write-Log "Recipient Key Name or Secret Key required for packing" 
-        Write-Host "Recipient Key Name or Secret Key required for packing"  -ForegroundColor Red
-        Close-Log
-        return
-    } 
-      
-    if ($rootFolderName -eq "") {
-        if ($path.EndsWith("*")) {
-            Write-Log "Root folder required for packing when using wild card for Path" 
-            Write-Host "Root folder required for packing when using wild card for Path"  -ForegroundColor Red
-            Close-Log
-            return
+    Write-Log "Script parameters follow"
+    ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
+    {
+        Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
+    #  'Key={0} Value={1}' -f $boundParam.Key, $boundParam.Value | Write-Log
+    }
+    Write-Log ""
+
+    if ($action -eq "Install") {
+        $actioned = $true
+        if ($Profile -eq "") {
+            Install-Module -Name 7Zip4Powershell -Scope CurrentUser
+            Install-Module -Name AWS.Tools.Installer -Scope CurrentUser
+            Install-Module -Name AWS.Tools.S3  -Scope CurrentUser    
         } else {
-            $rootFolderName = $path
+            Install-Module -Name 7Zip4Powershell -Scope $Profile
+            Install-Module -Name AWS.Tools.Installer -Scope $Profile
+            Install-Module -Name AWS.Tools.S3  -Scope $Profile
         }
     }
 
-    if ($ArchiveFileName -eq "") {
-        $ArchiveFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
-    }
+    if ($action -eq "Pack") {
+        $actioned = $true
 
-    if ($SecretKey -eq "") {
-        if ($secretFileName -eq "")
-        {
-            $secretFileName = $default_secretEncrypted
+        if ($RecipientKeyName -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            }
         }
-        $secret = New-RandomPassword -Length 80
-        Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret
-    } else {
-        $secret = $SecretKey
-    }
 
-    Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $ArchiveFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
-}
-
-
-if ($action -eq "Unpack") {
-    $actioned = $true
-    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-        Write-Log "Recipient Key Name or Secret Key required for unpacking" 
-        Write-Host "Recipient Key Name or Secret Key required for unpacking" -ForegroundColor Red
-        Close-Log
-        return
-    } 
-    if ($ArchiveFileName -eq "") {
-            Write-Log "Archive file Name required for unpacking" 
-            Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
+        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+            Write-Log "Recipient Key Name or Secret Key required for packing" 
+            Write-Host "Recipient Key Name or Secret Key required for packing"  -ForegroundColor Red
             Close-Log
             return
-    } 
-    
-    if ($SecretKey -eq "") {
-        if ($secretFileName -eq "")
-        {
+        } 
+        
+        if ($rootFolderName -eq "") {
+            if ($path.EndsWith("*")) {
+                Write-Log "Root folder required for packing when using wild card for Path" 
+                Write-Host "Root folder required for packing when using wild card for Path"  -ForegroundColor Red
+                Close-Log
+                return
+            } else {
+                $rootFolderName = $path
+            }
+        }
+
+        if ($ArchiveFileName -eq "") {
+            $ArchiveFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
+        }
+
+        if ($SecretKey -eq "") {
+            if ($secretFileName -eq "")
+            {
+                $secretFileName = $default_secretEncrypted
+            }
+            $secret = New-RandomPassword -Length 80
+            Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret 
+        } else {
+            $secret = $SecretKey
+        }
+
+        Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $ArchiveFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
+    }
+
+
+    if ($action -eq "Transfer") {
+        $actioned = $true
+        
+        if ($ArchiveFileName -eq "") {
+            Write-Log "Archive file name required" 
+            Write-Host "Archive file name required"  -ForegroundColor Red
+            Close-Log
+            return
+        }
+
+        if ($profile -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_PROFILE"
+            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $profile = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            } 
+            if ($profile -eq $null -or $profile -eq "") {
+                $profile = $default_profile
+            }
+        }
+        if ($bucketName -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_BUCKETNAME"
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $bucketName = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            }
+        }
+
+        if (!(Test-Path -Path $ArchiveFileName )) {
+            Write-Log "Archive file '$ArchiveFileName' not found"
+            Write-Host "Archive file '$ArchiveFileName' not found"  -ForegroundColor Red
+            Close-Log
+            return
+        }
+        if ($secretFileName -eq "") {
             $secretFileName = $default_secretEncrypted
         }
-        $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
-    } else {
-        $secret = $SecretKey
-    }
-    Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $ArchiveFileName
-    
-}
 
+        $remoteType = $false
+        if ($Path.StartsWith("s3://")) {
+            $remoteType = $true
+        
+            if ($bucketName -eq "") {
+                Write-Log "Bucket name required" 
+                Write-Host "Bucket name required"  -ForegroundColor Red
+                Close-Log
+                return
+            }
 
-if ($action -eq "ReconcileFile") {
-    $actioned = $true
-    if ($reconcileFileName -eq "")
-    {
-        $reconcileFileName = $default_reconcileFile
-    }
-    Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName -FileFilter $fileFilter
-}
+            Set-AWSCredential -ProfileName $profile
 
+            $targetObject = $($path.Substring(5) + "/" + $archiveFileName.Replace(".\", "/").Replace("\", "/")).Replace("//", "/")
+            Write-Log "Transferring '$ArchiveFileName' file to $targetObject"
+            Write-Host "Transferring '$ArchiveFileName' file to $targetObject"
+            #Write-S3Object -BucketName $bucketName -File $ArchiveFileName -Key $targetObject
+            if (Test-Path -Path $secretFileName) {
+                $targetObject = $($path.Substring(5) + "/" + $secretFileName.Replace(".\", "/").Replace("\", "/")).Replace("//", "/")
+                Write-Log "Transferring '$secretFileName' file to $targetObject"
+                Write-Host "Transferring '$secretFileName' file to $targetObject"
+                Write-S3Object -BucketName $bucketName -File $secretFileName -Key $targetObject 
+            }
 
-if ($action -eq "Reconcile") {
-    $actioned = $true
-    if ($reconcileFileName -eq "")
-    {
-        $reconcileFileName = $default_reconcileFile
-    }
-    $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
-    Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path
-}
-
-if ($action -eq "ArchiveInformation") {
-    $actioned = $true
-    if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-        Write-Log "Recipient Key Name or Secret Key required for 7Zip information" 
-        Write-Host "Recipient Key Name or Secret Key required for 7Zip information"  -ForegroundColor Red
-        Close-Log
-        return
-    } 
-    
-    if ($SecretKey -eq "") {
-        if ($secretFileName -eq "")
-        {
-            $secretFileName = $default_secretEncrypted
         }
-        $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
-    } else {
-        $secret = $SecretKey
+
+        if (!($remoteType)) {
+            Write-Log "Unknown remote path '$Path'.  No transfer performed" 
+            Write-Host "Unknown remote path '$Path'.  No transfer performed"  -ForegroundColor Red
+            Write-Host "Recognised transfer prefixes: "
+            Write-Host "    s3://         : Send to S3 compatible location"
+            #Write-Host "    file://       : Save to network location"    
+            #Write-Host "    //            : Save to network location"    
+            #Write-Host  "    X:\           : Save to X drive"    
+            #Write-Host "    ./            : Save to relative folder"    
+            #Write-Host "    ../           : Save to relative folder"    
+            #Write-Host "    /             : Save to absolute folder"    
+            Write-Host " "    
+            Write-Host "If you are saving to local drives, please use your OS tools to move the file"    
+            Write-Host " "    
+        }
+
     }
-    Write-Log "Retrieving archive information"
-    Write-Host "Retrieving archive information"
-    
-    Get-7ZipInformation -ArchiveFileName $ArchiveFileName -Password $secret
+
+    if ($action -eq "Unpack") {
+        $actioned = $true
+
+        if ($RecipientKeyName -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            }
+        }
+
+        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+            Write-Log "Recipient Key Name or Secret Key required for unpacking" 
+            Write-Host "Recipient Key Name or Secret Key required for unpacking" -ForegroundColor Red
+            Close-Log
+            return
+        } 
+        if ($ArchiveFileName -eq "") {
+                Write-Log "Archive file Name required for unpacking" 
+                Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
+                Close-Log
+                return
+        } 
+        
+        if ($SecretKey -eq "") {
+            if ($secretFileName -eq "")
+            {
+                $secretFileName = $default_secretEncrypted
+            }
+            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
+        } else {
+            $secret = $SecretKey
+        }
+        Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $ArchiveFileName
+        
+    }
+
+
+    if ($action -eq "ReconcileFile") {
+        $actioned = $true
+        if ($reconcileFileName -eq "")
+        {
+            $reconcileFileName = $default_reconcileFile
+        }
+        Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName -FileFilter $fileFilter
+    }
+
+
+    if ($action -eq "Reconcile") {
+        $actioned = $true
+        if ($reconcileFileName -eq "")
+        {
+            $reconcileFileName = $default_reconcileFile
+        }
+        $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
+        Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path
+    }
+
+    if ($action -eq "ArchiveInformation") {
+        $actioned = $true
+        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+            Write-Log "Recipient Key Name or Secret Key required for 7Zip information" 
+            Write-Host "Recipient Key Name or Secret Key required for 7Zip information"  -ForegroundColor Red
+            Close-Log
+            return
+        } 
+        
+        if ($SecretKey -eq "") {
+            if ($secretFileName -eq "")
+            {
+                $secretFileName = $default_secretEncrypted
+            }
+            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
+        } else {
+            $secret = $SecretKey
+        }
+        Write-Log "Retrieving archive information"
+        Write-Host "Retrieving archive information"
+        
+        Get-7ZipInformation -ArchiveFileName $ArchiveFileName -Password $secret
+    }
+
+
+    if ($action -eq "MakeCert") {
+        $actioned = $true
+        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
+            Write-Log "Recipient Key Name required to create a standard certificate" 
+            Write-Host "Recipient Key Name required to create a standard certificate"  -ForegroundColor Red
+            Close-Log
+            return
+        } 
+        if ($Path -ne "Cert:\CurrentUser\My") {
+            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
+            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
+            Close-Log
+            return
+        } 
+
+        Write-Log "Making a file encryption certificate"
+        Write-Host "Making a file encryption certificate"
+        
+        New-SelfSignedCertificate -Subject $RecipientKeyName -KeyFriendlyName $RecipientKeyName -DnsName $RecipientKeyName -CertStoreLocation $Path -KeyUsage KeyEncipherment,DataEncipherment, KeyAgreement -Type DocumentEncryptionCert
+    }
+
+
+    if ($action -eq "ListCert") {
+        $actioned = $true
+        if ($Path -ne "Cert:\CurrentUser\My") {
+            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
+            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
+            Close-Log
+            return
+        } 
+
+        Write-Log "Listing encryption certificates"
+        Write-Host "Listing encryption certificates"
+        
+        if ($RecipientKeyName -eq "")
+        {
+            Get-Childitem -Path $Path -DocumentEncryptionCert
+        } else {
+            Write-Host ""
+            Write-Host "   PSParentPath: Microsoft.PowerShell.Security\Certificate::$Path"
+            Write-Host ""
+            Write-Host "Thumbprint                                Subject"
+            Write-Host "----------                                -------"
+            Get-Childitem -Path $Path -DocumentEncryptionCert | ForEach-Object {
+                if ($_.Subject -eq ("CN=$RecipientKeyName"))
+                {
+                    Write-Host "$($_.Thumbprint)  $($_.Subject)"
+                }
+            }
+        }
+    }
+
+
+    if (!($actioned))
+    {
+        Write-Log "Unknown action '$action'.  No processing performed" 
+        Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
+        Write-Host "Recognised actions: "
+        Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
+        Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
+        Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
+        Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
+        Write-Host "    Install              : Install required packages"
+        Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
+        
+        Write-Host ""
+        Write-Host "For help use command "
+        Write-Host "    Get-Help .\ptrFiles.ps1"
+    }
+
+    Close-Log
 }
 
 
-if (!($actioned))
-{
-    Write-Log "Unknown action '$action'.  No processing performed" 
-    Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
-    Write-Host "Recognised actions: "
-    Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
-    Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
-    Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
-    Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
-    Write-Host "    Install              : Install required packages"
-    Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
-    
-    Write-Host ""
-    Write-Host "For help use command "
-    Write-Host "    Get-Help .\ptrFiles.ps1"
-}
-
-Close-Log
+Invoke-Main
