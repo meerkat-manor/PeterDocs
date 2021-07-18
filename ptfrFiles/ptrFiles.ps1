@@ -127,13 +127,7 @@
   was used. If not supplied a default name is used.  This file is 
   encrypted with RecipientKeyName.
 
-  The default name is ".\transfer.key"
-
- .Parameter BucketName
-  When transferring archive file to cloud the destination bucket name 
-  for those transfer locations supporting it.
-  Bucket name can also be specifed with Environment variable 
-  "PTRFILES_BUCKETNAME"
+  The default name is the archive file name with postfix  ".key"
 
  .Parameter Profile
   The profile name to use for Install and Transfer actions.  The
@@ -171,17 +165,16 @@
   The following environment variables are supported:
   - PTRFILES_RECIPIENTKEYNAME
   - PTRFILES_PROFILE
-  - PTRFILES_BUCKETNAME
 
  
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
-   # A file named ".\transfer.key" is also generated alongside the 7ZIP file
+   # A file with the postifx ".key" is also generated alongside the 7ZIP file
    .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -RecipientKeyName data@mycompany
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
-   # You will need the file named ".\transfer.key" to unpack the encrypted 7ZIP file
+   # You will need the file "transfer_protect_yyyMMdd_hhmm.7z.key" to unpack the encrypted 7ZIP file
    .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
  
  .Example
@@ -212,7 +205,6 @@ param (
     [String] $FileFilter,
     [String] $ReconcileFileName, 
     [String] $SecretFileName, 
-    [String] $BucketName,
     [String] $Profile,
     [switch] $ExcludeHash,
     [String] $LogPath
@@ -222,7 +214,6 @@ param (
 $default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
 $default_archiveFile = ".\ptr_file_##date##.7z"
 $default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
-$default_secretEncrypted = ".\transfer.key"
 $default_profile = "default"
 
 function Write-Log {
@@ -320,6 +311,201 @@ function Get-ConvenientFileSize
 
     return $totalFileXbytes.ToString() + " " + $totalRightLabel
 }
+
+
+
+function Get-B2ApiToken {
+    Param
+    (
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $AccountId,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $AccountKey
+    )
+
+
+    Begin
+    {
+        if(-not $AccountID -or -not $AccountKey)
+        {
+            [PSCredential]$b2Creds = Get-Credential -Message 'Enter your B2 account ID and application key below.'
+            try
+            {
+                [String]$AccountId = $b2Creds.GetNetworkCredential().UserName
+                [String]$AccountKey = $b2Creds.GetNetworkCredential().Password
+            }
+            catch
+            {
+                throw 'You must specify the account ID and application key.'
+            }
+        }
+        
+        [String]$plainCreds = "${AccountId}:${AccountKey}"
+        [String]$encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($plainCreds))
+        [Hashtable]$sessionHeaders = @{'Authorization'="Basic $encodedCreds"}
+        [Uri]$b2ApiUri = 'https://api.backblaze.com/b2api/v1/b2_authorize_account'
+    }
+    Process
+    {
+        try
+        {
+            $b2Info = Invoke-RestMethod -Method Get -Uri $b2ApiUri -Headers $sessionHeaders
+            [String]$script:SavedB2AccountID = $b2Info.accountId
+            [Uri]$script:SavedB2ApiUri = $b2Info.apiUrl
+            [String]$script:SavedB2ApiToken = $b2Info.authorizationToken
+            [Uri]$script:SavedB2DownloadUri = $b2Info.downloadUrl
+
+            $b2ReturnInfo = [PSCustomObject]@{
+                'AccountID' = $b2Info.accountId
+                'ApiUri' = $b2Info.apiUrl
+                'DownloadUri' = $b2Info.downloadUrl
+                'Token' = $b2Info.authorizationToken
+            }
+
+            return $b2ReturnInfo
+        }
+        catch
+        {
+            $errorDetail = $_.Exception.Message
+            Write-Error -Exception "Unable to authenticate with given APIKey.`n`r$errorDetail" `
+                -Message "Unable to authenticate with given APIKey.`n`r$errorDetail" -Category AuthenticationError
+        }
+    }    
+
+}
+
+
+function Get-B2Bucket {
+    Param
+    (
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $ApiToken,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $AccountId,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $ApiUri,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost
+    )
+
+    Begin
+    {
+        [Hashtable]$sessionHeaders = @{'Authorization'=$ApiToken}
+        [String]$sessionBody = @{'accountId'=$AccountID} | ConvertTo-Json
+        [Uri]$b2ApiUri = "$ApiUri/b2api/v1/b2_list_buckets"
+    }
+    Process
+    {
+        $b2Info = Invoke-RestMethod -Method Post -Uri $b2ApiUri -Headers $sessionHeaders -Body $sessionBody
+        foreach($info in $b2Info.buckets)
+        {
+            if ($bucketHost -eq $info.bucketName) {
+                $b2ReturnInfo = [PSCustomObject]@{
+                    'BucketName' = $info.bucketName
+                    'BucketID' = $info.bucketId
+                    'BucketType' = $info.bucketType
+                    'AccountID' = $info.accountId
+                }
+                return $b2ReturnInfo
+            }
+        }
+
+        return $null
+    }
+
+}
+
+function Get-B2UploadUri {
+    Param
+    (
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $FileName,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [Uri] $ApiUri,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $ApiToken
+    )
+
+    Begin
+    {
+        [Hashtable]$sessionHeaders = @{'Authorization'=$ApiToken}
+        [Uri]$b2ApiUri = "$ApiUri/b2api/v1/b2_get_upload_url"
+    }
+    Process
+    {
+        try
+        {
+            [String]$sessionBody = @{'bucketId'=$bucketHost} | ConvertTo-Json
+            $b2Info = Invoke-RestMethod -Method Post -Uri $b2ApiUri -Headers $sessionHeaders -Body $sessionBody
+            $b2ReturnInfo = [PSCustomObject]@{
+                'BucketId' = $b2Info.BucketId
+                'UploadUri' = $b2Info.uploadUrl
+                'Token' = $b2Info.authorizationToken
+            }
+
+            return $b2ReturnInfo
+        }
+        catch
+        {
+            $errorDetail = $_.Exception.Message
+            Write-Error -Exception "Unable to retrieve the upload uri.`n`r$errorDetail" `
+                -Message "Unable to retrieve the upload uri.`n`r$errorDetail" -Category ReadError
+        }
+    }
+
+}
+
+
+function Invoke-B2SUpload {
+    Param
+    (
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $TargetPath,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $FileName,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [Uri] $ApiUri,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $ApiToken
+    )
+
+    try
+    {
+        
+        [String] $b2FileName = [System.Uri]::EscapeDataString($TargetPath)       
+        [String] $b2FileMime = [System.Web.MimeMapping]::GetMimeMapping($fileName)        
+        [String]$b2FileSHA1 = (Get-FileHash -Path $fileName -Algorithm SHA1).Hash
+        [String]$b2FileAuthor = (Get-Acl -Path $fileName).Owner
+        
+        $b2FileAuthor = $b2FileAuthor.Substring($b2FileAuthor.IndexOf('\')+1)
+        
+        [Hashtable]$sessionHeaders = @{
+            'Authorization' = $ApiToken
+            'X-Bz-File-Name' = $b2FileName
+            'Content-Type' = $b2FileMime
+            'X-Bz-Content-Sha1' = $b2FileSHA1
+            'X-Bz-Info-Author' = $b2FileAuthor
+        }
+        
+        $b2Info = Invoke-RestMethod -Method Post -Uri $ApiUri -Headers $sessionHeaders -InFile $fileName
+        
+        $b2ReturnInfo = [PSCustomObject]@{
+            'Name' = $b2Info.fileName
+            'FileInfo' = $b2Info.fileInfo
+            'Type' = $b2Info.contentType
+            'Length' = $b2Info.contentLength
+            'BucketID' = $b2Info.bucketId
+            'AccountID' = $b2Info.accountId
+            'SHA1' = $b2Info.contentSha1
+            'ID' = $b2Info.fileId
+        }
+        
+        return $b2ReturnInfo 
+    }
+    catch
+    {
+        $errorDetail = $_.Exception.Message
+        Write-Error -Exception "Unable to upload the file.`n`r$errorDetail" `
+            -Message "Unable to upload the file.`n`r$errorDetail" -Category InvalidOperation
+    }
+
+
+
+}
+
+
+
+# ==============================================================================
+
 
 # Reconcile
 function Set-Reconcile
@@ -578,6 +764,236 @@ Param(
 }
 
 
+# Send package
+function Invoke-PutArchive
+{
+Param( 
+    [Parameter(Mandatory)][String] $CompressFile,
+    [Parameter(Mandatory)][String] $TargetPath,
+    [String] $SecretFile,
+    [String] $TargetProfile,
+    [String] $AccountId,
+    [String] $AccountKey
+) 
+
+    if ($compressFile -eq "") {
+        Write-Log "Archive file name required" 
+        Write-Host "Archive file name required"  -ForegroundColor Red
+        Close-Log
+        return
+    }
+
+    if ($targetProfile -eq "") {
+        $getEnvName = $(Get-SoftwareName) + "_PROFILE"
+        $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+            $targetProfile = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        } 
+        if ($targetProfile -eq $null -or $profile -eq "") {
+            $targetProfile = $default_profile
+        }
+    }
+
+    if (!(Test-Path -Path $compressFile )) {
+        Write-Log "Archive file '$compressFile' not found"
+        Write-Host "Archive file '$compressFile' not found"  -ForegroundColor Red
+        Close-Log
+        return
+    }
+    if ($secretFile -eq "") {
+        $secretFile = $compressFile + ".key"
+    }
+
+    $remoteType = $false
+
+    if ($targetPath.StartsWith("s3://")) {
+        $remoteType = $true
+
+        [int] $offset = "s3://".Length
+        $parts = $targetPath.Substring($offset).Split("/")
+        $bucketHost = $parts[0]
+        $offset = $offset + $bucketHost.Length + 1
+
+        if ($bucketHost -eq "") {
+            Write-Log "Bucket name required" 
+            Write-Host "Bucket name required"  -ForegroundColor Red
+            Close-Log
+            return
+        }
+
+        Set-AWSCredential -ProfileName $targetProfile
+
+        $targetObject = $targetPath.Substring($offset)
+        Write-Log "Transferring '$compressFile' file to host '$bucketHost' folder '$targetObject'"
+        Write-Host "Transferring '$compressFile' file to host '$bucketHost' folder '$targetObject'"
+        Write-S3Object -BucketName $bucketHost -File $compressFile -Key $targetObject
+        if (Test-Path -Path $secretFile) {
+            $targetObject = $targetPath.Substring($offset) + ".key"
+            Write-Log "Transferring '$secretFile' file to host '$bucketHost' folder '$targetObject'"
+            Write-Host "Transferring '$secretFile' file to host '$bucketHost' folder '$targetObject'"
+            Write-S3Object -BucketName $bucketName -File $secretFile -Key $targetObject 
+        }
+        $targetObject = $targetPath.Substring($offset)
+        Write-Log "Archive file '$compressFile' stored on S3 bucket '$bucketHost' at '$targetObject'"
+        Write-Host "Archive file '$compressFile' stored on S3 bucket '$bucketHost' at '$targetObject'" -ForegroundColor Green
+
+    }
+
+
+
+    if ($targetPath.StartsWith("b2://")) {
+        $remoteType = $true
+
+        [int] $offset = "b2://".Length
+        $parts = $targetPath.Substring($offset).Split("/")
+        $bucketHost = $parts[0]
+        $offset = $offset + $bucketHost.Length + 1
+
+        if ($accountId -eq $null -or $accountId -eq "") {
+            $accountId = $targetProfile
+        }
+
+        if ($accountKey -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_ACCOUNTKEY"
+            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $accountKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            } 
+            if ($accountKey -eq $null -or $accountKey -eq "") {
+                Write-Log "Account key required" 
+                Write-Host "Account key required"  -ForegroundColor Red
+                Close-Log
+                return
+            }
+        }
+
+        $b2ApiToken = Get-B2ApiToken -AccountId $accountId -AccountKey $accountKey
+
+        $b2Bucket = Get-B2Bucket -ApiToken $b2ApiToken.Token -AccountId $b2ApiToken.accountId -ApiUri $b2ApiToken.ApiUri -BucketHost $bucketHost
+        if ($b2Bucket -eq $null -or $b2Bucket.BucketID -eq "") {
+            Write-Log "Bucket '$bucketHost' not found" 
+            Write-Host "Bucket '$bucketHost' not found" -ForegroundColor Red
+            Close-Log
+            return
+        }
+
+        $b2UploadUri = Get-B2UploadUri -BucketHost $b2Bucket.bucketId -FileName $compressFile -ApiUri $b2ApiToken.ApiUri -ApiToken $b2ApiToken.Token 
+        $targetObject = $targetPath.Substring($offset)
+        Write-Log "Transferring '$compressFile' file to host '$bucketHost' folder '$targetObject'"
+        Write-Host "Transferring '$compressFile' file to host '$bucketHost' folder '$targetObject'"
+        $b2Upload = Invoke-B2SUpload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $compressFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
+        Write-Log "Upload: $b2Upload"
+        if (Test-Path -Path $secretFile) {
+            $targetObject = $targetPath.Substring($offset) + ".key"
+            Write-Log "Transferring '$secretFile' file to host '$bucketHost' folder '$targetObject'"
+            Write-Host "Transferring '$secretFile' file to host '$bucketHost' folder '$targetObject'"
+            $b2Upload = Invoke-B2SUpload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $secretFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
+            Write-Log "Upload: $b2Upload"
+        }
+        $targetObject = $targetPath.Substring($offset)
+        Write-Log "Archive file '$compressFile' stored on Backblaze bucket '$bucketHost' at '$targetObject'"
+        Write-Host "Archive file '$compressFile' stored on Backblaze bucket '$bucketHost' at '$targetObject'" -ForegroundColor Green
+
+    }
+
+    if (!($remoteType)) {
+        Write-Log "Unknown remote path '$targetFolder.'.  No transfer performed" 
+        Write-Host "Unknown remote path '$targetFolder.'.  No transfer performed"  -ForegroundColor Red
+        Write-Host "Recognised transfer prefixes: "
+        Write-Host "    s3://         : Send to S3 compatible location"
+        Write-Host " "    
+        Write-Host "If you are saving to local drives or network shared folders,"    
+        Write-Host "please use your OS tools to move the file"    
+    Write-Host " "    
+    }
+
+
+}
+
+
+# Receive package
+function Invoke-GetArchive
+{
+Param( 
+    [Parameter(Mandatory)][String] $CompressFile,
+    [Parameter(Mandatory)][String] $TargetPath,
+    [String] $BucketHost,
+    [String] $SecretFile,
+    [String] $SourceProfile
+) 
+    
+        if ($compressFile -eq "") {
+            Write-Log "Archive file name required" 
+            Write-Host "Archive file name required"  -ForegroundColor Red
+            Close-Log
+            return
+        }
+    
+        if ($sourceProfile -eq "") {
+            $getEnvName = $(Get-SoftwareName) + "_PROFILE"
+            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+                $sourceProfile = [System.Environment]::GetEnvironmentVariable($getEnvName)
+            } 
+            if ($sourceProfile -eq $null -or $profile -eq "") {
+                $sourceProfile = $default_profile
+            }
+        }
+    
+    
+        $remoteType = $false
+    
+        if ($targetPath.StartsWith("s3://")) {
+            $remoteType = $true
+
+            [int] $offset = "s3://".Length
+            $parts = $targetPath.Substring($offset).Split("/")
+            $bucketHost = $parts[0]
+            $offset = $offset + $bucketHost.Length + 1
+
+            Set-AWSCredential -ProfileName $sourceProfile
+    
+            $sourceObject = $targetPath.Substring($offset)
+            Write-Log "Transferring '$compressFile' file from host $bucketHost folder $sourceObject"
+            Write-Host "Transferring '$compressFile' file from host $bucketHost folder $sourceObject"
+            $null = Read-S3Object -BucketName $bucketHost -File $compressFile -Key $sourceObject
+            if (!(Test-Path -Path $compressFile)) {
+                Write-Log "Archive file '$sourceObject' not found." 
+                Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
+            } else {
+                $sourceObject = $targetPath.Substring($offset) + ".key"
+                $secretFile = $compressFile + ".key"
+                Write-Log "Transferring '$secretFile' file from host $bucketHost folder $sourceObject"
+                Write-Host "Transferring '$secretFile' file from host $bucketHost folder $sourceObject"
+                Read-S3Object -BucketName $bucketName -File $secretFile -Key $sourceObject 
+                if (!(Test-Path -Path $secretFile)) {
+                    Write-Log "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
+                    Write-Host "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
+                }
+                $sourceObject = $targetPath.Substring($offset)
+                Write-Log "Archive file '$compressFile' fetched from S3 bucket '$bucketHost' folder '$sourceObject'"
+                Write-Host "Archive file '$compressFile' fetched from S3 bucket '$bucketHost' folder '$sourceObject'" -ForegroundColor Green
+            }
+    
+        }
+    
+        if (!($remoteType)) {
+            Write-Log "Unknown remote path '$targetFolder'.  No get performed" 
+            Write-Host "Unknown remote path '$targetFolder'.  No get performed"  -ForegroundColor Red
+            Write-Host "Recognised transfer prefixes: "
+            Write-Host "    s3://         : Fetch from S3 compatible location"
+            Write-Host "    b2://         : Fetch from Backblaze location"
+            Write-Host " "    
+            Write-Host "If you are fetching from local drives or network shared folders,"    
+            Write-Host "please use your OS tools to move the file"    
+            Write-Host " "    
+        }
+    
+
+}
+
+
+# Unpack package
 function Invoke-Unpack
 {
 Param( 
@@ -610,6 +1026,7 @@ Param(
     [Parameter(Mandatory)][String] $ReconcileFile,
     [Parameter(Mandatory)][String] $Folder,
     [String] $TargetReconcileFile,
+    [String] $RootFolder,
     [Switch] $ExtendedCheck
 ) 
 
@@ -637,6 +1054,7 @@ Param(
     $totalFileCount = 0
     $totalFileSize = 0
     $errorCount = 0
+    $errorCreateCount = 0
     $missingFileCount = 0
     $missingHash = $false
 
@@ -644,7 +1062,12 @@ Param(
     #     find the file and compare hash
     Import-Csv $reconcileFile | ForEach-Object {
         $totalFileCount = $totalFileCount +1 
-        $restoreFileName = $(Join-Path -Path $folder -ChildPath $_.FullName)    
+        if ($rootFolder -ne "") {
+            $adjustedName = $_.FullName.Replace($rootFolder, "\")
+            $restoreFileName = $(Join-Path -Path $folder -ChildPath $adjustedName)    
+        } else {
+            $restoreFileName = $(Join-Path -Path $folder -ChildPath $_.FullName)    
+        }
         If (Test-Path -Path $restoreFileName ) {    
             if ($_.Hash -ne "") {
                 $targetHash= (Get-FileHash -Path $restoreFileName).Hash
@@ -656,8 +1079,16 @@ Param(
                 $missingHash = $true
             }
             if ((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
-                $errorCount = $errorCount + 1
                 Write-Log "Creation mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                $errorCreateCount = $errorCreateCount + 1
+
+                $dateTimeValue = [Datetime]::ParseExact($_.CreationTime, 'yyyy-MM-ddTHH:mm:ss', $null)
+                $fileValue = (Get-Item -Path $restoreFileName).CreationTime
+                $diff = ($dateTimeValue - $fileValue).Seconds
+                # Allow +/- 2 second discrepancy
+                if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
+                    $errorCount = $errorCount + 1
+                }
             }
             if ((Get-Item -Path $restoreFileName).Length -ne $_.Length) {
                 $errorCount = $errorCount + 1
@@ -696,6 +1127,11 @@ Param(
     Write-Log "Total file count is $totalFileCount with $errorCount errors"
     Write-Log "There are $missingFileCount missing files"
 
+    if ($errorCreateCount -gt 0) {
+        Write-Log "File create mismatch count is $errorCreateCount" 
+        Write-Host "File create mismatch count is $errorCreateCount" -ForegroundColor Red
+    }
+
     if ($errorCount -gt 0) {
         Write-Host "Total file count is $totalFileCount with $errorCount errors" -ForegroundColor Red
     } else {
@@ -708,24 +1144,9 @@ Param(
 
 
 # Main code logic starts here
-function Invoke-Main() {
-
-
-    $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
-    Write-Log "***********************************************************************************"
-    Write-Log "*   Start of processing: [$dateTimeStart]"
-    Write-Log "***********************************************************************************"
-
-
+function Invoke-Main {
+    
     $actioned = $false
-
-    Write-Log "Script parameters follow"
-    ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
-    {
-        Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
-    #  'Key={0} Value={1}' -f $boundParam.Key, $boundParam.Value | Write-Log
-    }
-    Write-Log ""
 
     if ($action -eq "Install") {
         $actioned = $true
@@ -775,7 +1196,7 @@ function Invoke-Main() {
         if ($SecretKey -eq "") {
             if ($secretFileName -eq "")
             {
-                $secretFileName = $default_secretEncrypted
+                $secretFileName = $ArchiveFileName + ".key"
             }
             $secret = New-RandomPassword -Length 80
             Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret 
@@ -787,7 +1208,7 @@ function Invoke-Main() {
     }
 
 
-    if ($action -eq "Transfer") {
+    if ($action -eq "Put") {
         $actioned = $true
         
         if ($ArchiveFileName -eq "") {
@@ -797,76 +1218,30 @@ function Invoke-Main() {
             return
         }
 
-        if ($profile -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_PROFILE"
-            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
-                $profile = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            } 
-            if ($profile -eq $null -or $profile -eq "") {
-                $profile = $default_profile
-            }
-        }
-        if ($bucketName -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_BUCKETNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
-                $bucketName = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            }
-        }
-
         if (!(Test-Path -Path $ArchiveFileName )) {
             Write-Log "Archive file '$ArchiveFileName' not found"
             Write-Host "Archive file '$ArchiveFileName' not found"  -ForegroundColor Red
             Close-Log
             return
         }
-        if ($secretFileName -eq "") {
-            $secretFileName = $default_secretEncrypted
-        }
 
-        $remoteType = $false
-        if ($Path.StartsWith("s3://")) {
-            $remoteType = $true
-        
-            if ($bucketName -eq "") {
-                Write-Log "Bucket name required" 
-                Write-Host "Bucket name required"  -ForegroundColor Red
-                Close-Log
-                return
-            }
-
-            Set-AWSCredential -ProfileName $profile
-
-            $targetObject = $($path.Substring(5) + "/" + $archiveFileName.Replace(".\", "/").Replace("\", "/")).Replace("//", "/")
-            Write-Log "Transferring '$ArchiveFileName' file to $targetObject"
-            Write-Host "Transferring '$ArchiveFileName' file to $targetObject"
-            #Write-S3Object -BucketName $bucketName -File $ArchiveFileName -Key $targetObject
-            if (Test-Path -Path $secretFileName) {
-                $targetObject = $($path.Substring(5) + "/" + $secretFileName.Replace(".\", "/").Replace("\", "/")).Replace("//", "/")
-                Write-Log "Transferring '$secretFileName' file to $targetObject"
-                Write-Host "Transferring '$secretFileName' file to $targetObject"
-                Write-S3Object -BucketName $bucketName -File $secretFileName -Key $targetObject 
-            }
-
-        }
-
-        if (!($remoteType)) {
-            Write-Log "Unknown remote path '$Path'.  No transfer performed" 
-            Write-Host "Unknown remote path '$Path'.  No transfer performed"  -ForegroundColor Red
-            Write-Host "Recognised transfer prefixes: "
-            Write-Host "    s3://         : Send to S3 compatible location"
-            #Write-Host "    file://       : Save to network location"    
-            #Write-Host "    //            : Save to network location"    
-            #Write-Host  "    X:\           : Save to X drive"    
-            #Write-Host "    ./            : Save to relative folder"    
-            #Write-Host "    ../           : Save to relative folder"    
-            #Write-Host "    /             : Save to absolute folder"    
-            Write-Host " "    
-            Write-Host "If you are saving to local drives, please use your OS tools to move the file"    
-            Write-Host " "    
-        }
-
+        Invoke-PutArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $profile
     }
+
+
+    if ($action -eq "Get") {
+        $actioned = $true
+        
+        if ($ArchiveFileName -eq "") {
+            Write-Log "Archive file name required" 
+            Write-Host "Archive file name required"  -ForegroundColor Red
+            Close-Log
+            return
+        }
+        
+        Invoke-GetArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $profile
+    }
+
 
     if ($action -eq "Unpack") {
         $actioned = $true
@@ -894,7 +1269,7 @@ function Invoke-Main() {
         if ($SecretKey -eq "") {
             if ($secretFileName -eq "")
             {
-                $secretFileName = $default_secretEncrypted
+                $secretFileName = $ArchiveFileName + ".key"
             }
             $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
         } else {
@@ -922,7 +1297,7 @@ function Invoke-Main() {
             $reconcileFileName = $default_reconcileFile
         }
         $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
-        Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path
+        Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path -RootFolder $rootFolderName
     }
 
     if ($action -eq "ArchiveInformation") {
@@ -937,7 +1312,7 @@ function Invoke-Main() {
         if ($SecretKey -eq "") {
             if ($secretFileName -eq "")
             {
-                $secretFileName = $default_secretEncrypted
+                $secretFileName = $ArchiveFileName + ".key"
             }
             $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
         } else {
@@ -1009,6 +1384,8 @@ function Invoke-Main() {
         Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
         Write-Host "Recognised actions: "
         Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
+        Write-Host "    Put                  : Put or send the archive file to remote destination"
+        Write-Host "    Get                  : Get or fetch the archive from remote location"
         Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
         Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
         Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
@@ -1022,6 +1399,24 @@ function Invoke-Main() {
 
     Close-Log
 }
+
+
+$dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
+Write-Log "***********************************************************************************"
+Write-Log "*   Start of processing: [$dateTimeStart]"
+Write-Log "***********************************************************************************"
+
+
+Write-Log "Script parameters follow"
+ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
+{
+    if ($boundParam.Key -eq "SecretKey") {
+        Write-Log "Parameter: $($boundParam.Key)   Value: ************** "
+    } else {
+        Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
+    }
+}
+Write-Log ""
 
 
 Invoke-Main
