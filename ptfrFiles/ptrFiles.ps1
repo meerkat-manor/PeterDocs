@@ -205,7 +205,7 @@ param (
     [String] $FileFilter,
     [String] $ReconcileFileName, 
     [String] $SecretFileName, 
-    [String] $Profile,
+    [String] $CloudProfile,
     [switch] $ExcludeHash,
     [String] $LogPath
 
@@ -504,6 +504,41 @@ function Invoke-B2SUpload {
 
 
 
+function Invoke-B2SDownload {
+    Param
+    (
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $SourcePath,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $FileName,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [Uri] $ApiDownloadUri,
+        [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $ApiToken
+    )
+
+    Begin
+    {
+        if(-not (Test-Path -Path $FileName -IsValid))
+        {
+            throw 'The file path given ($FileName) is not valid.`n`rThe file cannot be saved.'
+        }
+        [Hashtable]$sessionHeaders = @{'Authorization'=$ApiToken}
+    }
+    Process
+    {
+        [Uri]$b2ApiUri = "${ApiDownloadUri}file/$BucketHost/$SourcePath"
+            try
+            {
+                Invoke-RestMethod -Method Get -Uri $b2ApiUri -Headers $sessionHeaders -OutFile $FileName
+            }
+            catch
+            {
+                $errorDetail = $_.Exception.Message
+                Write-Error -Exception "Unable to upload the file.`n`r$errorDetail" `
+                    -Message "Unable to upload the file.`n`r$errorDetail" -Category InvalidOperation
+            }
+    }
+
+}
+
 # ==============================================================================
 
 
@@ -785,11 +820,10 @@ Param(
 
     if ($targetProfile -eq "") {
         $getEnvName = $(Get-SoftwareName) + "_PROFILE"
-        $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
-        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
             $targetProfile = [System.Environment]::GetEnvironmentVariable($getEnvName)
         } 
-        if ($targetProfile -eq $null -or $profile -eq "") {
+        if ($null -eq $targetProfile -or $targetProfile -eq "") {
             $targetProfile = $default_profile
         }
     }
@@ -849,17 +883,16 @@ Param(
         $bucketHost = $parts[0]
         $offset = $offset + $bucketHost.Length + 1
 
-        if ($accountId -eq $null -or $accountId -eq "") {
+        if ($null -eq $accountId -or $accountId -eq "") {
             $accountId = $targetProfile
         }
 
         if ($accountKey -eq "") {
             $getEnvName = $(Get-SoftwareName) + "_ACCOUNTKEY"
-            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
                 $accountKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
             } 
-            if ($accountKey -eq $null -or $accountKey -eq "") {
+            if ($null -eq $accountKey -or $accountKey -eq "") {
                 Write-Log "Account key required" 
                 Write-Host "Account key required"  -ForegroundColor Red
                 Close-Log
@@ -870,7 +903,7 @@ Param(
         $b2ApiToken = Get-B2ApiToken -AccountId $accountId -AccountKey $accountKey
 
         $b2Bucket = Get-B2Bucket -ApiToken $b2ApiToken.Token -AccountId $b2ApiToken.accountId -ApiUri $b2ApiToken.ApiUri -BucketHost $bucketHost
-        if ($b2Bucket -eq $null -or $b2Bucket.BucketID -eq "") {
+        if ($null -eq $b2Bucket -or $b2Bucket.BucketID -eq "") {
             Write-Log "Bucket '$bucketHost' not found" 
             Write-Host "Bucket '$bucketHost' not found" -ForegroundColor Red
             Close-Log
@@ -916,10 +949,11 @@ function Invoke-GetArchive
 {
 Param( 
     [Parameter(Mandatory)][String] $CompressFile,
-    [Parameter(Mandatory)][String] $TargetPath,
-    [String] $BucketHost,
+    [Parameter(Mandatory)][String] $SourcePath,
     [String] $SecretFile,
-    [String] $SourceProfile
+    [String] $SourceProfile,
+    [String] $AccountId,
+    [String] $AccountKey
 ) 
     
         if ($compressFile -eq "") {
@@ -931,11 +965,10 @@ Param(
     
         if ($sourceProfile -eq "") {
             $getEnvName = $(Get-SoftwareName) + "_PROFILE"
-            $testEnv = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
                 $sourceProfile = [System.Environment]::GetEnvironmentVariable($getEnvName)
             } 
-            if ($sourceProfile -eq $null -or $profile -eq "") {
+            if ($null -eq $sourceProfile -or $sourceProfile -eq "") {
                 $sourceProfile = $default_profile
             }
         }
@@ -943,46 +976,108 @@ Param(
     
         $remoteType = $false
     
-        if ($targetPath.StartsWith("s3://")) {
+        if ($sourcePath.StartsWith("s3://")) {
             $remoteType = $true
 
             [int] $offset = "s3://".Length
-            $parts = $targetPath.Substring($offset).Split("/")
+            $parts = $sourcePath.Substring($offset).Split("/")
             $bucketHost = $parts[0]
             $offset = $offset + $bucketHost.Length + 1
 
             Set-AWSCredential -ProfileName $sourceProfile
     
-            $sourceObject = $targetPath.Substring($offset)
-            Write-Log "Transferring '$compressFile' file from host $bucketHost folder $sourceObject"
-            Write-Host "Transferring '$compressFile' file from host $bucketHost folder $sourceObject"
+            $sourceObject = $sourcePath.Substring($offset)
+            Write-Log "Fetching '$compressFile' file from host $bucketHost folder $sourceObject"
+            Write-Host "Fetching '$compressFile' file from host $bucketHost folder $sourceObject"
             $null = Read-S3Object -BucketName $bucketHost -File $compressFile -Key $sourceObject
             if (!(Test-Path -Path $compressFile)) {
                 Write-Log "Archive file '$sourceObject' not found." 
                 Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
             } else {
-                $sourceObject = $targetPath.Substring($offset) + ".key"
+                $sourceObject = $sourcePath.Substring($offset) + ".key"
                 $secretFile = $compressFile + ".key"
-                Write-Log "Transferring '$secretFile' file from host $bucketHost folder $sourceObject"
-                Write-Host "Transferring '$secretFile' file from host $bucketHost folder $sourceObject"
-                Read-S3Object -BucketName $bucketName -File $secretFile -Key $sourceObject 
+                Write-Log "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
+                Write-Host "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
+                $null = Read-S3Object -BucketName $bucketHost -File $secretFile -Key $sourceObject 
                 if (!(Test-Path -Path $secretFile)) {
                     Write-Log "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
                     Write-Host "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
                 }
-                $sourceObject = $targetPath.Substring($offset)
-                Write-Log "Archive file '$compressFile' fetched from S3 bucket '$bucketHost' folder '$sourceObject'"
-                Write-Host "Archive file '$compressFile' fetched from S3 bucket '$bucketHost' folder '$sourceObject'" -ForegroundColor Green
+                $sourceObject = $sourcePath.Substring($offset)
+                Write-Log "Archive file '$compressFile' fetched from S3 '$sourcePath'"
+                Write-Host "Archive file '$compressFile' fetched from S3 '$sourcePath'" -ForegroundColor Green
             }
     
         }
     
+
+    
+        if ($sourcePath.StartsWith("b2://")) {
+            $remoteType = $true
+
+            [int] $offset = "b2://".Length
+            $parts = $sourcePath.Substring($offset).Split("/")
+            $bucketHost = $parts[0]
+            $offset = $offset + $bucketHost.Length + 1
+
+            if ($null -eq $accountId -or $accountId -eq "") {
+                $accountId = $sourceProfile
+            }
+    
+            if ($accountKey -eq "") {
+                $getEnvName = $(Get-SoftwareName) + "_ACCOUNTKEY"
+                if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+                    $accountKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
+                } 
+                if ($null -eq $accountKey -or $accountKey -eq "") {
+                    Write-Log "Account key required" 
+                    Write-Host "Account key required"  -ForegroundColor Red
+                    Close-Log
+                    return
+                }
+            }
+    
+            $b2ApiToken = Get-B2ApiToken -AccountId $accountId -AccountKey $accountKey
+
+            $b2Bucket = Get-B2Bucket -ApiToken $b2ApiToken.Token -AccountId $b2ApiToken.accountId -ApiUri $b2ApiToken.ApiUri -BucketHost $bucketHost
+            if ($null -eq $b2Bucket -or $b2Bucket.BucketID -eq "") {
+                Write-Log "Bucket '$bucketHost' not found" 
+                Write-Host "Bucket '$bucketHost' not found" -ForegroundColor Red
+                Close-Log
+                return
+            }
+    
+            $sourceObject = $sourcePath.Substring($offset)
+            Write-Log "Fetching '$compressFile' file from host '$bucketHost' folder '$sourceObject'"
+            Write-Host "Fetching '$compressFile' file from host '$bucketHost' folder '$sourceObject'"
+            Invoke-B2SDownload -BucketHost $bucketHost -SourcePath $sourceObject -FileName $compressFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
+            if (!(Test-Path -Path $compressFile)) {
+                Write-Log "Archive file '$sourceObject' not found." 
+                Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
+            } else {
+                $sourceObject = $sourcePath.Substring($offset) + ".key"
+                $secretFile = $compressFile + ".key"
+                Write-Log "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
+                Write-Host "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
+                Invoke-B2SDownload -BucketHost $bucketHost -SourcePath $sourceObject -FileName $secretFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
+                if (!(Test-Path -Path $secretFile)) {
+                    Write-Log "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
+                    Write-Host "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
+                }
+                $sourceObject = $sourcePath.Substring($offset)
+                Write-Log "Archive file '$compressFile' fetched from Backblaze '$sourcePath'"
+                Write-Host "Archive file '$compressFile' fetched from Backblaze '$sourcePath'" -ForegroundColor Green
+            }
+        
+        }
+
+
         if (!($remoteType)) {
-            Write-Log "Unknown remote path '$targetFolder'.  No get performed" 
-            Write-Host "Unknown remote path '$targetFolder'.  No get performed"  -ForegroundColor Red
+            Write-Log "Unknown remote path '$sourcePath'.  No get performed" 
+            Write-Host "Unknown remote path '$sourcePath'.  No get performed"  -ForegroundColor Red
             Write-Host "Recognised transfer prefixes: "
-            Write-Host "    s3://         : Fetch from S3 compatible location"
-            Write-Host "    b2://         : Fetch from Backblaze location"
+            Write-Host "    s3://bucket/path/path     : Fetch from S3 compatible location"
+            Write-Host "    b2://bucket/path/path     : Fetch from Backblaze location"
             Write-Host " "    
             Write-Host "If you are fetching from local drives or network shared folders,"    
             Write-Host "please use your OS tools to move the file"    
@@ -1150,14 +1245,14 @@ function Invoke-Main {
 
     if ($action -eq "Install") {
         $actioned = $true
-        if ($Profile -eq "") {
+        if ($cloudProfile -eq "") {
             Install-Module -Name 7Zip4Powershell -Scope CurrentUser
             Install-Module -Name AWS.Tools.Installer -Scope CurrentUser
             Install-Module -Name AWS.Tools.S3  -Scope CurrentUser    
         } else {
-            Install-Module -Name 7Zip4Powershell -Scope $Profile
-            Install-Module -Name AWS.Tools.Installer -Scope $Profile
-            Install-Module -Name AWS.Tools.S3  -Scope $Profile
+            Install-Module -Name 7Zip4Powershell -Scope $cloudProfile
+            Install-Module -Name AWS.Tools.Installer -Scope $cloudProfile
+            Install-Module -Name AWS.Tools.S3  -Scope $cloudProfile
         }
     }
 
@@ -1166,7 +1261,7 @@ function Invoke-Main {
 
         if ($RecipientKeyName -eq "") {
             $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
                 $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
             }
         }
@@ -1225,7 +1320,7 @@ function Invoke-Main {
             return
         }
 
-        Invoke-PutArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $profile
+        Invoke-PutArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $cloudProfile
     }
 
 
@@ -1239,7 +1334,7 @@ function Invoke-Main {
             return
         }
         
-        Invoke-GetArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $profile
+        Invoke-GetArchive -CompressFile $archiveFileName -SourcePath $path -SecretFile $secretFileName -SourceProfile $cloudProfile
     }
 
 
@@ -1248,7 +1343,7 @@ function Invoke-Main {
 
         if ($RecipientKeyName -eq "") {
             $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and [System.Environment]::GetEnvironmentVariable($getEnvName) -ne $null) {
+            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
                 $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
             }
         }
