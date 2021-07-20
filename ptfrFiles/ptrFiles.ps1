@@ -129,7 +129,7 @@
 
   The default name is the archive file name with postfix  ".key"
 
- .Parameter Profile
+ .Parameter CloudProfile
   The profile name to use for Install and Transfer actions.  The
   default for Install is "UserScope".  The default for "Transfer"
   is "default"
