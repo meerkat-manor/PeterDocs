@@ -211,10 +211,35 @@ param (
 
 )
 
-$default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
-$default_archiveFile = ".\ptr_file_##date##.7z"
+#$default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
+#$default_archiveFile = ".\ptr_file_##date##.7z"
 $default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
 $default_profile = "default"
+
+function Open-Log {
+    parm(
+        $PSBoundParameters
+    )
+
+    $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
+    Write-Log "***********************************************************************************"
+    Write-Log "*   Start of processing: [$dateTimeStart]"
+    Write-Log "***********************************************************************************"
+    
+    if ($null -ne $PSBoundParameters) {
+        Write-Log "Script parameters follow"
+        ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
+        {
+            if ($boundParam.Key -eq "SecretKey") {
+                Write-Log "Parameter: $($boundParam.Key)   Value: ************** "
+            } else {
+                Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
+            }
+        }
+        Write-Log ""
+    }
+
+}
 
 function Write-Log {
     param(
@@ -1237,281 +1262,19 @@ Param(
     }
 }
 
+<#
+Export-ModuleMember -Function 'Get-SoftwareName'
 
-# Main code logic starts here
-function Invoke-Main {
-    
-    $actioned = $false
+Export-ModuleMember -Function 'Open-Log'
+Export-ModuleMember -Function 'Write-Log'
+Export-ModuleMember -Function 'Close-Log'
 
-    if ($action -eq "Install") {
-        $actioned = $true
-        if ($cloudProfile -eq "") {
-            Install-Module -Name 7Zip4Powershell -Scope CurrentUser
-            Install-Module -Name AWS.Tools.Installer -Scope CurrentUser
-            Install-Module -Name AWS.Tools.S3  -Scope CurrentUser    
-        } else {
-            Install-Module -Name 7Zip4Powershell -Scope $cloudProfile
-            Install-Module -Name AWS.Tools.Installer -Scope $cloudProfile
-            Install-Module -Name AWS.Tools.S3  -Scope $cloudProfile
-        }
-    }
+Export-ModuleMember -Function 'New-RandomPassword'
 
-    if ($action -eq "Pack") {
-        $actioned = $true
-
-        if ($RecipientKeyName -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
-                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            }
-        }
-
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for packing" 
-            Write-Host "Recipient Key Name or Secret Key required for packing"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        
-        if ($rootFolderName -eq "") {
-            if ($path.EndsWith("*")) {
-                Write-Log "Root folder required for packing when using wild card for Path" 
-                Write-Host "Root folder required for packing when using wild card for Path"  -ForegroundColor Red
-                Close-Log
-                return
-            } else {
-                $rootFolderName = $path
-            }
-        }
-
-        if ($ArchiveFileName -eq "") {
-            $ArchiveFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
-        }
-
-        if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
-            {
-                $secretFileName = $ArchiveFileName + ".key"
-            }
-            $secret = New-RandomPassword -Length 80
-            Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret 
-        } else {
-            $secret = $SecretKey
-        }
-
-        Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $ArchiveFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
-    }
-
-
-    if ($action -eq "Put") {
-        $actioned = $true
-        
-        if ($ArchiveFileName -eq "") {
-            Write-Log "Archive file name required" 
-            Write-Host "Archive file name required"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-
-        if (!(Test-Path -Path $ArchiveFileName )) {
-            Write-Log "Archive file '$ArchiveFileName' not found"
-            Write-Host "Archive file '$ArchiveFileName' not found"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-
-        Invoke-PutArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $cloudProfile
-    }
-
-
-    if ($action -eq "Get") {
-        $actioned = $true
-        
-        if ($ArchiveFileName -eq "") {
-            Write-Log "Archive file name required" 
-            Write-Host "Archive file name required"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-        
-        Invoke-GetArchive -CompressFile $archiveFileName -SourcePath $path -SecretFile $secretFileName -SourceProfile $cloudProfile
-    }
-
-
-    if ($action -eq "Unpack") {
-        $actioned = $true
-
-        if ($RecipientKeyName -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
-                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            }
-        }
-
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for unpacking" 
-            Write-Host "Recipient Key Name or Secret Key required for unpacking" -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        if ($ArchiveFileName -eq "") {
-                Write-Log "Archive file Name required for unpacking" 
-                Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
-                Close-Log
-                return
-        } 
-        
-        if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
-            {
-                $secretFileName = $ArchiveFileName + ".key"
-            }
-            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
-        } else {
-            $secret = $SecretKey
-        }
-        Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $ArchiveFileName
-        
-    }
-
-
-    if ($action -eq "ReconcileFile") {
-        $actioned = $true
-        if ($reconcileFileName -eq "")
-        {
-            $reconcileFileName = $default_reconcileFile
-        }
-        Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName -FileFilter $fileFilter
-    }
-
-
-    if ($action -eq "Reconcile") {
-        $actioned = $true
-        if ($reconcileFileName -eq "")
-        {
-            $reconcileFileName = $default_reconcileFile
-        }
-        $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
-        Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path -RootFolder $rootFolderName
-    }
-
-    if ($action -eq "ArchiveInformation") {
-        $actioned = $true
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for 7Zip information" 
-            Write-Host "Recipient Key Name or Secret Key required for 7Zip information"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        
-        if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
-            {
-                $secretFileName = $ArchiveFileName + ".key"
-            }
-            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
-        } else {
-            $secret = $SecretKey
-        }
-        Write-Log "Retrieving archive information"
-        Write-Host "Retrieving archive information"
-        
-        Get-7ZipInformation -ArchiveFileName $ArchiveFileName -Password $secret
-    }
-
-
-    if ($action -eq "MakeCert") {
-        $actioned = $true
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name required to create a standard certificate" 
-            Write-Host "Recipient Key Name required to create a standard certificate"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
-            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-
-        Write-Log "Making a file encryption certificate"
-        Write-Host "Making a file encryption certificate"
-        
-        New-SelfSignedCertificate -Subject $RecipientKeyName -KeyFriendlyName $RecipientKeyName -DnsName $RecipientKeyName -CertStoreLocation $Path -KeyUsage KeyEncipherment,DataEncipherment, KeyAgreement -Type DocumentEncryptionCert
-    }
-
-
-    if ($action -eq "ListCert") {
-        $actioned = $true
-        if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
-            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-
-        Write-Log "Listing encryption certificates"
-        Write-Host "Listing encryption certificates"
-        
-        if ($RecipientKeyName -eq "")
-        {
-            Get-Childitem -Path $Path -DocumentEncryptionCert
-        } else {
-            Write-Host ""
-            Write-Host "   PSParentPath: Microsoft.PowerShell.Security\Certificate::$Path"
-            Write-Host ""
-            Write-Host "Thumbprint                                Subject"
-            Write-Host "----------                                -------"
-            Get-Childitem -Path $Path -DocumentEncryptionCert | ForEach-Object {
-                if ($_.Subject -eq ("CN=$RecipientKeyName"))
-                {
-                    Write-Host "$($_.Thumbprint)  $($_.Subject)"
-                }
-            }
-        }
-    }
-
-
-    if (!($actioned))
-    {
-        Write-Log "Unknown action '$action'.  No processing performed" 
-        Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
-        Write-Host "Recognised actions: "
-        Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
-        Write-Host "    Put                  : Put or send the archive file to remote destination"
-        Write-Host "    Get                  : Get or fetch the archive from remote location"
-        Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
-        Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
-        Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
-        Write-Host "    Install              : Install required packages"
-        Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
-        
-        Write-Host ""
-        Write-Host "For help use command "
-        Write-Host "    Get-Help .\ptrFiles.ps1"
-    }
-
-    Close-Log
-}
-
-
-$dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
-Write-Log "***********************************************************************************"
-Write-Log "*   Start of processing: [$dateTimeStart]"
-Write-Log "***********************************************************************************"
-
-
-Write-Log "Script parameters follow"
-ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
-{
-    if ($boundParam.Key -eq "SecretKey") {
-        Write-Log "Parameter: $($boundParam.Key)   Value: ************** "
-    } else {
-        Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
-    }
-}
-Write-Log ""
-
-
-Invoke-Main
+Export-ModuleMember -Function 'Set-Reconcile'
+Export-ModuleMember -Function 'Invoke-Pack'
+Export-ModuleMember -Function 'Invoke-PutArchive'
+Export-ModuleMember -Function 'Invoke-GetArchive'
+Export-ModuleMember -Function 'Invoke-Unpack'
+Export-ModuleMember -Function 'Invoke-Reconcile'
+#>
