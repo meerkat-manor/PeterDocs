@@ -1,243 +1,14 @@
-<#
- .Synopsis
-   Allows the secure transfer and reconciliation of a large number of files
 
-   PTRfile: Protect, Transfer, Reconcile files
-
- .Description
-   Packages source folder contents into a 7ZIP file, adding a reconciliation 
-   file to the 7ZIP file and then encrypting the contents.  Send 
-   * this script
-   * the 7ZIP package file 
-   * plus optional SecretFilename ( if using RecipientKeyName )
-   to the target or recipient.
-   
-   The source folder is not altered and only read rights are required. A log
-   file is written at exceution to record activity.
-
-   The SecretFileName can be sent via email, while the 7ZIP can go different routes 
-   due to possible size such as:
-   * Cloud storage provider
-   * HTTPS web file upload
-   * SFTP transfer
-   * USB stick
-
-   At the target, unpack the contents to a folder and reconcile the results.  You
-   will need write access on the target storage. A log file is written at exceution
-   to record activity.
-
-   Your bulk file transfer is encrypted in transit.  Note that if you use the
-   SecretKey method the ecnrypted contents will only be as secure as the strength
-   of your secret.
-
-   You can use storage providers such as Dropbox, AWS S3, Google Drive, OneDrive or BackBlaze
-   and your documents have additonal protection.
-
-   A log file is produced on execution.  Repeated executions on the same day
-   will add text content to the same log file.  The default log name takes the form:
-   "ptr_files_yyyy-MM-dd.log"
-
-   You will need to have installed the 7Zip4Powershell PowerShell cmdlet 
-   before using the pack or unpack actions.  You can install the cmdlet
-   by executing 
-   .\ptrFiles.ps1 -Action install -Path ".\" 
-
-   Author:  Tom Peltonen
-
- .Parameter Action
-  Action to perform, which can be:
-  - Install             : Install 7Zip4PowerShell
-  - Pack                : Archive the contents of a folder(s)
-  - Unpack              : Unpack the archive, but no reconfile is performed
-  - Reconcile           : Reconcile the contents in the restored folder
-  - ReconcileFile       : Generate reconfile file.  The pack process does this.
-  - ArchiveInformation  : Fetch archive information
-
- .Parameter Path
-  The path to the files and folders to pack or the path to the unpack location. 
-  The path can include a trailing * as a wildcard to only include a subset of 
-  directories.
-
-  When using the trailing * for names, the filtering is only applied to immediate
-  folder names under the parent folder.  The filter does not cascade to lower folders.
-
-  The path can be a local drive, mapped network drive or a network shared folder
-  location such as \\stora\MyLibrary.
-
-  The Path can also be a file containing a list of paths, one per line.  To use a
-  list file, prefix the Path value with a "@" and name the file. Do not use a folder
-  for @ defined path.
-
-  A file (@ prefix) containing a list of paths cannot contain generic path names, that 
-  is paths with trailing wildcard of "*"
-
- .Parameter RecipientKeyName
-  The recipient of the package which is used to find the appropriate
-  certificate for encrypting with the public key.  Either the RecipientKeyName 
-  or the SecretKey is required for packing or unpacking the 7ZIP file.
-  Using the RecipientKeyName is the most secure transfer option as a
-  asymmetric cryptographic key is used that can only be decrypted by the 
-  holder of the private key.
-
-  If you are using the RecipientKeyName, then the 7ZIP file contents can only
-  be unzipped by the holder of the private key and the SecretFileName file.
-  If you don't have the private, which you should not unless you are sending
-  to yourself, then you cannot unpack the 7ZIP file.
-
- .Parameter SecretKey
-  A tradiitional secret to encrypt or decrypt the 7ZIP package. Either the RecipientKeyName 
-  or the SecretKey is required for packing or unpacking the 7ZIP file.  This method
-  uses a symmetric cryptographic key exchange which is less secure then the 
-  RecipientKeyName approach.
-
-  Note: Currently the script doe snot user Secure Strings
-
- .Parameter ArchiveFileName
-  The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
-  will be generated in the current directory for the pack action.
-
-  The default name will take the form ".\transfer_protect_yyyyMMdd_hhmm.7z"
-
-  For unpack actions, the archive file name parameter is mandatory.
-
- .Parameter RootFolderName
-  The root folder, which should be used if using wildcard (*) for the
-  path.  A guess will be made as to value if not supplied, which will
-  work in many circumstances.
-
- .Parameter FileFilter
-  A filter on file names.  This does not filter directories.
-  An example to only include JPEG file is "*.jpg".  You can also
-  filter on picture file names starting with "IMG*.jpg"
-
- .Parameter ReconcileFileName
-  The name of the reconfile file name to generate during pack or use 
-  during unpack.  This is a file name without path.  If no value is 
-  supplied, then a default name is generated.
-  The reconcile file is included into the root of the 7ZIP file.
-  Once a reconcile is executed, you can delete this file from the 
-  restored location.
-
-  The default name is "##protect_transfer_reconcile_files##.csv"
-
- .Parameter SecretFileName
-  The secret file name is used with RecipientKeyName to secure the
-  internally generated password for the 7ZIP file.  When unpacking the
-  7ZIP file you will need access to this file if RecipientKeyName
-  was used. If not supplied a default name is used.  This file is 
-  encrypted with RecipientKeyName.
-
-  The default name is the archive file name with postfix  ".key"
-
- .Parameter CloudProfile
-  The profile name to use for Install and Transfer actions.  The
-  default for Install is "UserScope".  The default for "Transfer"
-  is "default"
-  Profile name can also be specifed with Environment variable 
-  "PTRFILES_PROFILE"
-
- .Parameter ExcludeHash
-  Exclude the file hash from the reconcile file.  As producing a file
-  hash takes compute cycles during pack, you can select to bypass this 
-  generation to speed up the packaging.  Excluding the hash does reduce 
-  the functionality of the reconciliation at unpack.
-
- .Parameter LogPath
-  The log folder where log files are written.  If the folder does not
-  exist then it is created.  You need write access rights to this location.
-
- .Notes
-  This script has been written to use the 7ZIP function as it is open source
-  and provides a secure encryption mechanism, plus portability on Windows,
-  Linux and MacOS.
-
-  It is also beneficial that 7ZIP has efficient compression algorithms.
-
-  Compressing and packing a large data set can take significant time and also
-  require storage space.  The script does not check if you have sufficient
-  free storage to package the source contents into a single 7ZIP file.  It is your
-  responsibility to ensure sufficient storage space exists.
-
-  If you need to copy files from one directory to another accessible directory from
-  your Windows desktop, you might consider using ROBOCOPY.  If the target directory
-  is not accessible and you want to reconcile, then this tool is appropriate. 
-
-  The following environment variables are supported:
-  - PTRFILES_RECIPIENTKEYNAME
-  - PTRFILES_PROFILE
-
- 
- .Example
-   # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
-   # A file with the postifx ".key" is also generated alongside the 7ZIP file
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -RecipientKeyName data@mycompany
- 
- .Example
-   # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
-   # You will need the file "transfer_protect_yyyMMdd_hhmm.7z.key" to unpack the encrypted 7ZIP file
-   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
- 
- .Example
-   # Reconcile files in folder ".\targetdir"
-   .\ptrFiles.ps1 -Action reconcile -Path ".\targetdir" 
-
- .Example
-   # Pack and encrypt all files in folder ".\transferpack\" using a password
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
- 
- .Example
-   # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a password
-   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
-
- .Example
-   # Pack and encrypt all files in folder ".\transferpack\02*" where the folder name starts with "02" using a password
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
-
-#>
-
-param (
-    [Parameter(Mandatory)][String] $Action, 
-    [Parameter(Mandatory)][String] $Path, 
-    [String] $RecipientKeyName,
-    [String] $SecretKey, 
-    [String] $ArchiveFileName, 
-    [String] $RootFolderName,
-    [String] $FileFilter,
-    [String] $ReconcileFileName, 
-    [String] $SecretFileName, 
-    [String] $CloudProfile,
-    [switch] $ExcludeHash,
-    [String] $LogPath
-
-)
-
-#$default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
-#$default_archiveFile = ".\ptr_file_##date##.7z"
 $default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
 $default_profile = "default"
+$default_archiveFile = ".\ptr_file_##date##.7z"
 
 function Open-Log {
-    parm(
-        $PSBoundParameters
-    )
 
     $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
     Write-Log "***********************************************************************************"
     Write-Log "*   Start of processing: [$dateTimeStart]"
     Write-Log "***********************************************************************************"
-    
-    if ($null -ne $PSBoundParameters) {
-        Write-Log "Script parameters follow"
-        ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
-        {
-            if ($boundParam.Key -eq "SecretKey") {
-                Write-Log "Parameter: $($boundParam.Key)   Value: ************** "
-            } else {
-                Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
-            }
-        }
-        Write-Log ""
-    }
 
 }
 
@@ -276,7 +47,7 @@ function Close-Log {
 }
 
 function Get-SoftwareName {
-    return [String] "PTRFILES"
+    return [String] "PETERDOCS"
 }
 
 function New-RandomPassword {
@@ -719,65 +490,259 @@ function Invoke-SinglePack
 
 
 # Compress / Package
+
+<#
+ .Synopsis
+   Packs a source folder(s) into an encrypted 7ZIP archive file
+   that can be securely transported to a remote lcoation or
+   even used as a secure permmanent backup.
+
+   PeterDocs : Protect, Transfer, Reconcile Document Files
+
+ .Description
+   Packages source folder contents into a 7ZIP file, adding a reconciliation 
+   file to the 7ZIP file and then encrypting the contents.  The source folder
+   is not altered and only read rights are required. A log file is written 
+   at exceution to record activity.
+
+ 
+ .Parameter SourceFolder
+  The path to the files and folders to pack. 
+  The path name can include a trailing * as a wildcard to only include a subset of 
+  directories.
+
+  When using the trailing * for names, the filtering is only applied to immediate
+  folder names under the parent folder.  The filter does not cascade to lower folders.
+
+  The path can be a local drive, mapped network drive or a network shared folder
+  location such as \\MediaStor\MyLibrary.
+
+  The source folder parameter can also be a file containing a list of paths, one per line.
+  To use a list file, prefix the source folder value with a "@" and name the file. 
+  Do not use a folder for @ defined path.
+
+  A file (@ prefix) containing a list of paths cannot contain generic path names, that 
+  is paths with trailing wildcard of "*"
+
+ .Parameter RecipientKey
+  The recipient of the package which is used to find the appropriate
+  certificate for encrypting with the public key.  Either the RecipientKeyName 
+  or the SecretKey is required for packing or unpacking the 7ZIP file.
+  Using the RecipientKeyName is the most secure transfer option as a
+  asymmetric cryptographic key is used that can only be decrypted by the 
+  holder of the private key.
+
+  If you are using the RecipientKeyName, then the 7ZIP file contents can only
+  be unzipped by the holder of the private key and the SecretFileName file.
+  If you don't have the private, which you should not unless you are sending
+  to yourself, then you cannot unpack the 7ZIP file.
+
+ .Parameter SecretKey
+  A tradiitional secret to encrypt or decrypt the 7ZIP package. Either the RecipientKeyName 
+  or the SecretKey is required for packing or unpacking the 7ZIP file.  This method
+  uses a symmetric cryptographic key exchange which is less secure then the 
+  RecipientKeyName approach.
+
+  Note: Currently the script doe snot user Secure Strings
+
+ .Parameter ArchiveFile
+  The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
+  will be generated in the current directory for the pack action.
+
+  The default name will take the form ".\transfer_protect_yyyyMMdd_hhmm.7z"
+
+  For unpack actions, the archive file name parameter is mandatory.
+
+ .Parameter RootFolder
+  The root folder, which should be used if using wildcard (*) for the
+  path.  A guess will be made as to value if not supplied, which will
+  work in many circumstances.
+
+ .Parameter FileFilter
+  A filter on file names.  This does not filter directories.
+  An example to only include JPEG file is "*.jpg".  You can also
+  filter on picture file names starting with "IMG*.jpg"
+
+ .Parameter ReconcileFile
+  The name of the reconfile file name to generate during pack or use 
+  during unpack.  This is a file name without path.  If no value is 
+  supplied, then a default name is generated.
+  The reconcile file is included into the root of the 7ZIP file.
+  Once a reconcile is executed, you can delete this file from the 
+  restored location.
+
+  The default name is "##protect_transfer_reconcile_files##.csv"
+
+ .Parameter SecretFile
+  The secret file name is used with RecipientKey to secure the
+  internally generated password for the 7ZIP file.  When unpacking the
+  7ZIP file you will need access to this file if RecipientKey
+  was used. If not supplied a default name is used.  This file is 
+  encrypted with RecipientKey.
+
+  The default name is the archive file name with postfix  ".key"
+
+ .Parameter ExcludeHash
+  Exclude the file hash from the reconcile file.  As producing a file
+  hash takes compute cycles during pack, you can select to bypass this 
+  generation to speed up the packaging.  Excluding the hash does reduce 
+  the functionality of the reconciliation at unpack.
+
+ .Parameter LogPath
+  The log folder where log files are written.  If the folder does not
+  exist then it is created.  You need write access rights to this location.
+
+ .Notes
+  This script has been written to use the 7ZIP function as it is open source
+  and provides a secure encryption mechanism, plus portability on Windows,
+  Linux and MacOS.
+
+  It is also beneficial that 7ZIP has efficient compression algorithms.
+
+  Compressing and packing a large data set can take significant time and also
+  require storage space.  The script does not check if you have sufficient
+  free storage to package the source contents into a single 7ZIP file.  It is your
+  responsibility to ensure sufficient storage space exists.
+
+  If you need to copy files from one directory to another accessible directory from
+  your Windows desktop, you might consider using ROBOCOPY.  If the target directory
+  is not accessible and you want to reconcile, then this tool is appropriate. 
+
+  The following environment variables are supported:
+  - PETERDOCS_RECIPIENTKEY
+
+ 
+ .Example
+   # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
+   # A file with the postifx ".key" is also generated alongside the 7ZIP file
+   Invoke-Pack -SourceFolder ".\transferpack\" -RecipientKeyName data@mycompany
+ 
+#>
+
 function Invoke-Pack
 {
 Param( 
-    [Parameter(Mandatory)][String] $TransferFolder,
+    [Parameter(Mandatory)][String] $SourceFolder,
+    [String] $RecipientKey,
+    [String] $SecretKey,
+    [String] $ArchiveFile,
+    [String] $ReconcileFile, 
+    [String] $FileFilter ="*",
+    [String] $SecretFile, 
+    [switch] $ExcludeHash,
     [String] $RootFolder,
-    [String] $FileFilter,
-    [Parameter(Mandatory)][String] $Secret,
-    [Parameter(Mandatory)][String] $CompressFile,
-    [String] $ReconcileFile
+    [String] $LogPath
+
 ) 
 
-    if ($transferFolder.StartsWith("@")) {
-        If (!(Test-Path -Path $transferFolder.Substring(1) )) {    
-            Write-Log "File '$($transferFolder.Substring(1))' does not exist"
-            Write-Host "File '$($transferFolder.Substring(1))' does not exist" -ForegroundColor Red
+    Open-Log
+    
+    Write-Log "Function parameters follow"
+    Write-Log "Parameter: SourceFolder   Value: $SourceFolder "
+    Write-Log "Parameter: RecipientKey   Value: $RecipientKey "
+    if ($null -eq $SecretKey) {
+        Write-Log "Parameter: SecretKey   Value: (null)) "
+    } else {
+        Write-Log "Parameter: SecretKey   Value: ************** "
+    }
+    Write-Log "Parameter: ArchiveFile   Value: $ArchiveFile "
+    Write-Log "Parameter: ReconcileFile   Value: $ReconcileFile "
+    Write-Log "Parameter: FileFilter   Value: $FileFilter "
+    Write-Log "Parameter: SecretFile   Value: $SecretFile "
+    Write-Log "Parameter: ExcludeHash   Value: $ExcludeHash "
+    Write-Log "Parameter: LogPath   Value: $LogPath "
+    Write-Log ""
+
+    if ($SourceFolder.StartsWith("@")) {
+        If (!(Test-Path -Path $SourceFolder.Substring(1) )) {    
+            Write-Log "File '$($SourceFolder.Substring(1))' does not exist"
+            Write-Host "File '$($SourceFolder.Substring(1))' does not exist" -ForegroundColor Red
             Close-Log
             Exit
         }
     } else {
-        If (!(Test-Path -Path $transferFolder )) {    
-            Write-Log "Folder '$transferFolder' does not exist"
-            Write-Host "Folder '$transferFolder' does not exist" -ForegroundColor Red
+        If (!(Test-Path -Path $SourceFolder )) {    
+            Write-Log "Folder '$SourceFolder' does not exist"
+            Write-Host "Folder '$SourceFolder' does not exist" -ForegroundColor Red
             Close-Log
             Exit
         }
     }
 
-    Write-Log "Saving folders/files to archive file '$compressFile'"
-    Write-Host "Saving folders/files to archive file '$compressFile'"
 
-    if ($reconcileFile -eq "")
-    {
-        $reconcileFile = $default_reconcileFile
+    if ($RecipientKey -eq "") {
+        $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEY"
+        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+            $RecipientKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        }
     }
 
-    if ($fileFilter -eq "")
-    {
-        $fileFilter = "*"
+    if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
+        Write-Log "Recipient Key or Secret Key required for packing" 
+        Write-Host "Recipient Key or Secret Key required for packing"  -ForegroundColor Red
+        Close-Log
+        return
+    } 
+    
+    if ($RootFolder -eq "") {
+        if ($SourceFolder.EndsWith("*")) {
+            Write-Log "Root folder required for packing when using wild card for Source Folder" 
+            Write-Host "Root folder required for packing when using wild card for Source Folder"  -ForegroundColor Red
+            Close-Log
+            return
+        } else {
+            $RootFolder = $SourceFolder
+        }
     }
 
-    if ($transferFolder.EndsWith("*"))
+    if ($ArchiveFile -eq "") {
+        $ArchiveFile = $default_archiveFile.Replace("##date##", (Get-Date -Format "yyyyMMdd_HHmm"))
+    }
+
+    if ($SecretKey -eq "") {
+        if ($SecretFile -eq "")
+        {
+            $SecretFile = $ArchiveFile + ".key"
+        }
+        $secret = New-RandomPassword -Length 80
+        Protect-CmsMessage -To $recipientKey -OutFile $SecretFile -Content $secret 
+    } else {
+        $secret = $SecretKey
+    }
+
+
+    Write-Log "Saving folders/files to archive file '$ArchiveFile'"
+    Write-Host "Saving folders/files to archive file '$ArchiveFile'"
+
+    if ($ReconcileFile -eq "")
     {
-        Write-Log "Archive primary folder is '$transferFolder'"
+        $ReconcileFile = $default_reconcileFile
+    }
+
+    if ($FileFilter -eq "")
+    {
+        $FileFilter = "*"
+    }
+
+    if ($SourceFolder.EndsWith("*"))
+    {
+        Write-Log "Archive primary folder is '$SourceFolder'"
         $firstCompress = $true
-        Get-ChildItem $transferFolder| ForEach-Object {
-            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
+        Get-ChildItem $SourceFolder| ForEach-Object {
+            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
         }
     } else {
-        if ($transferFolder.StartsWith("@")) {
-            Write-Log "Using @ file '$($transferFolder.Substring(1))'"
-            Write-Host "Using @ file '$($transferFolder.Substring(1))'"
+        if ($SourceFolder.StartsWith("@")) {
+            Write-Log "Using @ file '$($SourceFolder.Substring(1))'"
+            Write-Host "Using @ file '$($SourceFolder.Substring(1))'"
             $firstCompress = $true
 
-            Get-Content -Path $($transferFolder.Substring(1)) | ForEach-Object {
+            Get-Content -Path $($SourceFolder.Substring(1)) | ForEach-Object {
                 if ($_ -ne "") {
 
                     if ($_.EndsWith("*")) {
                         Get-ChildItem $_ | ForEach-Object {
-                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
                         }
                     } else {
                 
@@ -786,41 +751,43 @@ Param(
                             Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
                         }
                         else {
-                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_ -ArchiveFile $compressFile -FileFilter $fileFilter -FirstCompress $firstCompress
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_ -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
                         }
                     }
                 }
             }
         } else {
-            Write-Log "Archive folder '$transferFolder'"
-            Write-Host "Archive folder '$transferFolder'"
-            Compress-7Zip -Path $transferFolder -ArchiveFileName $compressFile -Format SevenZip -Filter $fileFilter    
+            Write-Log "Archive folder '$SourceFolder'"
+            Write-Host "Archive folder '$SourceFolder'"
+            Compress-7Zip -Path $SourceFolder -ArchiveFileName $ArchiveFile -Format SevenZip -Filter $FileFilter    
         }
     }
 
-    If (!(Test-Path -Path $compressFile )) {    
-        Write-Log "Archive file '$compressFile' was not created.  See any previous errors"
-        Write-Host "Archive file '$compressFile' was not created.  See any previous errors" -ForegroundColor Red
+    If (!(Test-Path -Path $ArchiveFile )) {    
+        Write-Log "Archive file '$ArchiveFile' was not created.  See any previous errors"
+        Write-Host "Archive file '$ArchiveFile' was not created.  See any previous errors" -ForegroundColor Red
         Close-Log
         Exit
     }
 
-    Set-Reconcile -ReconcileFile $reconcileFile -FolderName $transferFolder -FileFilter $fileFilter -RootFolderName $rootFolder
-    If (!(Test-Path -Path $reconcileFile )) {    
-        Write-Log "Reconcile file '$reconcileFile' was not created.  See any previous errors"
-        Write-Host "Reconcile file '$reconcileFile' was not created.  See any previous errors" -ForegroundColor Red
+    Set-Reconcile -ReconcileFile $ReconcileFile -FolderName $SourceFolder -FileFilter $FileFilter -RootFolderName $rootFolder
+    If (!(Test-Path -Path $ReconcileFile )) {    
+        Write-Log "Reconcile file '$ReconcileFile' was not created.  See any previous errors"
+        Write-Host "Reconcile file '$ReconcileFile' was not created.  See any previous errors" -ForegroundColor Red
         Close-Log
         return
     }
 
-    Write-Log "Add reconcile file '$reconcileFile' to file '$compressFile'"
-    $fullReconcileName = (Get-Item $reconcileFile).FullName
-    $fullZipName = (Get-Item $compressFile).FullName
+    Write-Log "Add reconcile file '$ReconcileFile' to file '$ArchiveFile'"
+    $fullReconcileName = (Get-Item $ReconcileFile).FullName
+    $fullZipName = (Get-Item $ArchiveFile).FullName
     Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
     Remove-Item $fullReconcileName
 
-    Write-Log "Archive file '$compressFile' created from folder '$transferFolder'"
-    Write-Host "Archive file '$compressFile' created from folder '$transferFolder'"  -ForegroundColor Green
+    Write-Log "Archive file '$ArchiveFile' created from folder '$SourceFolder'"
+    Write-Host "Archive file '$ArchiveFile' created from folder '$SourceFolder'"  -ForegroundColor Green
+
+    Close-Log
 }
 
 
