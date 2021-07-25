@@ -1016,8 +1016,6 @@ Param(
 }
 
 
-# Receive package
-
 
 <#
  .Synopsis
