@@ -1,9 +1,4 @@
 
-$default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
-$default_profile = "default"
-$default_archiveFile = ".\ptr_file_##date##.7z"
-
-
 
 function Get-B2ApiToken {
     Param
@@ -141,7 +136,7 @@ function Get-B2UploadUri {
 }
 
 
-function Invoke-B2SUpload {
+function Send-B2Upload {
     Param
     (
         [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost,
@@ -197,7 +192,7 @@ function Invoke-B2SUpload {
 
 
 
-function Invoke-B2SDownload {
+function Receive-B2Download {
     Param
     (
         [Parameter(Mandatory)] [ValidateNotNull()] [ValidateNotNullOrEmpty()] [String] $BucketHost,
@@ -232,135 +227,4 @@ function Invoke-B2SDownload {
 
 }
 
-
-
-# Compress / Package
-
-<#
- .Synopsis
-   Packs a source folder(s) into an encrypted 7ZIP archive file
-   that can be securely transported to a remote lcoation or
-   even used as a secure permmanent backup.
-
-   PeterDocs : Protect, Transfer, Reconcile Document Files
-
- .Description
-   Packages source folder contents into a 7ZIP file, adding a reconciliation 
-   file to the 7ZIP file and then encrypting the contents.  The source folder
-   is not altered and only read rights are required. A log file is written 
-   at exceution to record activity.
-
- 
- .Parameter SourceFolder
-  The path to the files and folders to pack. 
-  The path name can include a trailing * as a wildcard to only include a subset of 
-  directories.
-
-  When using the trailing * for names, the filtering is only applied to immediate
-  folder names under the parent folder.  The filter does not cascade to lower folders.
-
-  The path can be a local drive, mapped network drive or a network shared folder
-  location such as \\MediaStor\MyLibrary.
-
-  The source folder parameter can also be a file containing a list of paths, one per line.
-  To use a list file, prefix the source folder value with a "@" and name the file. 
-  Do not use a folder for @ defined path.
-
-  A file (@ prefix) containing a list of paths cannot contain generic path names, that 
-  is paths with trailing wildcard of "*"
-
- .Parameter RecipientKey
-  The recipient of the package which is used to find the appropriate
-  certificate for encrypting with the public key.  Either the RecipientKeyName 
-  or the SecretKey is required for packing or unpacking the 7ZIP file.
-  Using the RecipientKeyName is the most secure transfer option as a
-  asymmetric cryptographic key is used that can only be decrypted by the 
-  holder of the private key.
-
-  If you are using the RecipientKeyName, then the 7ZIP file contents can only
-  be unzipped by the holder of the private key and the SecretFileName file.
-  If you don't have the private, which you should not unless you are sending
-  to yourself, then you cannot unpack the 7ZIP file.
-
- .Parameter SecretKey
-  A tradiitional secret to encrypt or decrypt the 7ZIP package. Either the RecipientKeyName 
-  or the SecretKey is required for packing or unpacking the 7ZIP file.  This method
-  uses a symmetric cryptographic key exchange which is less secure then the 
-  RecipientKeyName approach.
-
-  Note: Currently the script doe snot user Secure Strings
-
- .Parameter ArchiveFile
-  The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
-  will be generated in the current directory for the pack action.
-
-  The default name will take the form ".\transfer_protect_yyyyMMdd_hhmm.7z"
-
-  For unpack actions, the archive file name parameter is mandatory.
-
- .Parameter RootFolder
-  The root folder, which should be used if using wildcard (*) for the
-  path.  A guess will be made as to value if not supplied, which will
-  work in many circumstances.
-
- .Parameter FileFilter
-  A filter on file names.  This does not filter directories.
-  An example to only include JPEG file is "*.jpg".  You can also
-  filter on picture file names starting with "IMG*.jpg"
-
- .Parameter ReconcileFile
-  The name of the reconfile file name to generate during pack or use 
-  during unpack.  This is a file name without path.  If no value is 
-  supplied, then a default name is generated.
-  The reconcile file is included into the root of the 7ZIP file.
-  Once a reconcile is executed, you can delete this file from the 
-  restored location.
-
-  The default name is "##protect_transfer_reconcile_files##.csv"
-
- .Parameter SecretFile
-  The secret file name is used with RecipientKey to secure the
-  internally generated password for the 7ZIP file.  When unpacking the
-  7ZIP file you will need access to this file if RecipientKey
-  was used. If not supplied a default name is used.  This file is 
-  encrypted with RecipientKey.
-
-  The default name is the archive file name with postfix  ".key"
-
- .Parameter ExcludeHash
-  Exclude the file hash from the reconcile file.  As producing a file
-  hash takes compute cycles during pack, you can select to bypass this 
-  generation to speed up the packaging.  Excluding the hash does reduce 
-  the functionality of the reconciliation at unpack.
-
- .Parameter LogPath
-  The log folder where log files are written.  If the folder does not
-  exist then it is created.  You need write access rights to this location.
-
- .Notes
-  This script has been written to use the 7ZIP function as it is open source
-  and provides a secure encryption mechanism, plus portability on Windows,
-  Linux and MacOS.
-
-  It is also beneficial that 7ZIP has efficient compression algorithms.
-
-  Compressing and packing a large data set can take significant time and also
-  require storage space.  The script does not check if you have sufficient
-  free storage to package the source contents into a single 7ZIP file.  It is your
-  responsibility to ensure sufficient storage space exists.
-
-  If you need to copy files from one directory to another accessible directory from
-  your Windows desktop, you might consider using ROBOCOPY.  If the target directory
-  is not accessible and you want to reconcile, then this tool is appropriate. 
-
-  The following environment variables are supported:
-  - PETERDOCS_RECIPIENTKEY
-
- 
- .Example
-   # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
-   # A file with the postifx ".key" is also generated alongside the 7ZIP file
-   Invoke-Pack -SourceFolder ".\transferpack\" -RecipientKeyName data@mycompany
- 
-#>
 

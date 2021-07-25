@@ -9,13 +9,13 @@
    file to the 7ZIP file and then encrypting the contents.  Send 
    * this script
    * the 7ZIP package file 
-   * plus optional SecretFilename ( if using RecipientKeyName )
+   * plus optional SecretFile ( if using RecipientKey )
    to the target or recipient.
    
    The source folder is not altered and only read rights are required. A log
    file is written at exceution to record activity.
 
-   The SecretFileName can be sent via email, while the 7ZIP can go different routes 
+   The SecretFile can be sent via email, while the 7ZIP can go different routes 
    due to possible size such as:
    * Cloud storage provider
    * HTTPS web file upload
@@ -35,18 +35,17 @@
 
    A log file is produced on execution.  Repeated executions on the same day
    will add text content to the same log file.  The default log name takes the form:
-   "ptr_files_yyyy-MM-dd.log"
+   "PETERDOCS_yyyy-MM-dd.log"
 
    You will need to have installed the 7Zip4Powershell PowerShell cmdlet 
    before using the pack or unpack actions.  You can install the cmdlet
    by executing 
-   .\ptrFiles.ps1 -Action install -Path ".\" 
+   .\ptrDocs.ps1 -Action install -Path ".\" 
 
-   Author:  Tom Peltonen
 
  .Parameter Action
   Action to perform, which can be:
-  - Install             : Install 7Zip4PowerShell
+  - Install             : Install 7Zip4PowerShell and other modules
   - Pack                : Archive the contents of a folder(s)
   - Unpack              : Unpack the archive, but no reconfile is performed
   - Reconcile           : Reconcile the contents in the restored folder
@@ -71,36 +70,34 @@
   A file (@ prefix) containing a list of paths cannot contain generic path names, that 
   is paths with trailing wildcard of "*"
 
- .Parameter RecipientKeyName
+ .Parameter RecipientKey
   The recipient of the package which is used to find the appropriate
-  certificate for encrypting with the public key.  Either the RecipientKeyName 
+  certificate for encrypting with the public key.  Either the RecipientKey 
   or the SecretKey is required for packing or unpacking the 7ZIP file.
-  Using the RecipientKeyName is the most secure transfer option as a
+  Using the RecipientKey is the most secure transfer option as a
   asymmetric cryptographic key is used that can only be decrypted by the 
   holder of the private key.
 
-  If you are using the RecipientKeyName, then the 7ZIP file contents can only
-  be unzipped by the holder of the private key and the SecretFileName file.
+  If you are using the RecipientKey, then the 7ZIP file contents can only
+  be unzipped by the holder of the private key and the SecretFile file.
   If you don't have the private, which you should not unless you are sending
   to yourself, then you cannot unpack the 7ZIP file.
 
  .Parameter SecretKey
-  A tradiitional secret to encrypt or decrypt the 7ZIP package. Either the RecipientKeyName 
+  A tradiitional secret to encrypt or decrypt the 7ZIP package. Either the RecipientKey 
   or the SecretKey is required for packing or unpacking the 7ZIP file.  This method
   uses a symmetric cryptographic key exchange which is less secure then the 
-  RecipientKeyName approach.
+  RecipientKey approach.
 
-  Note: Currently the script doe snot user Secure Strings
+  Note: Currently the script does not user Secure Strings
 
- .Parameter ArchiveFileName
+ .Parameter ArchiveFile
   The location and name of the 7ZIP file.  If not supplied a default 7ZIP file name
   will be generated in the current directory for the pack action.
 
-  The default name will take the form ".\transfer_protect_yyyyMMdd_hhmm.7z"
-
   For unpack actions, the archive file name parameter is mandatory.
 
- .Parameter RootFolderName
+ .Parameter RootFolder
   The root folder, which should be used if using wildcard (*) for the
   path.  A guess will be made as to value if not supplied, which will
   work in many circumstances.
@@ -110,8 +107,8 @@
   An example to only include JPEG file is "*.jpg".  You can also
   filter on picture file names starting with "IMG*.jpg"
 
- .Parameter ReconcileFileName
-  The name of the reconfile file name to generate during pack or use 
+ .Parameter ReconcileFile
+  The name of the reconcile file name to generate during pack or use 
   during unpack.  This is a file name without path.  If no value is 
   supplied, then a default name is generated.
   The reconcile file is included into the root of the 7ZIP file.
@@ -120,21 +117,21 @@
 
   The default name is "##protect_transfer_reconcile_files##.csv"
 
- .Parameter SecretFileName
-  The secret file name is used with RecipientKeyName to secure the
+ .Parameter SecretFile
+  The secret file name is used with RecipientKey to secure the
   internally generated password for the 7ZIP file.  When unpacking the
-  7ZIP file you will need access to this file if RecipientKeyName
+  7ZIP file you will need access to this file if RecipientKey
   was used. If not supplied a default name is used.  This file is 
-  encrypted with RecipientKeyName.
+  encrypted with RecipientKey.
 
   The default name is the archive file name with postfix  ".key"
 
  .Parameter CloudProfile
-  The profile name to use for Install and Transfer actions.  The
-  default for Install is "UserScope".  The default for "Transfer"
+  The profile name to use for Install and Put/Get actions.  The
+  default for Install is "UserScope".  The default for "Put" or "GET"
   is "default"
   Profile name can also be specifed with Environment variable 
-  "PTRFILES_PROFILE"
+  "PETERDOCS_PROFILE"
 
  .Parameter ExcludeHash
   Exclude the file hash from the reconcile file.  As producing a file
@@ -163,64 +160,58 @@
   is not accessible and you want to reconcile, then this tool is appropriate. 
 
   The following environment variables are supported:
-  - PTRFILES_RECIPIENTKEYNAME
-  - PTRFILES_PROFILE
+  - PETERDOCS_RECIPIENTKEY
+  - PETERDOCS_PROFILE
+  - PETERDOCS_ACCOUNTKEY
+  - PETERDOCS_LOGPATH
 
  
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
    # A file with the postifx ".key" is also generated alongside the 7ZIP file
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -RecipientKeyName data@mycompany
+   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\" -RecipientKey data@mycompany
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
    # You will need the file "transfer_protect_yyyMMdd_hhmm.7z.key" to unpack the encrypted 7ZIP file
-   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKeyName data@mycompany
+   .\ptrDocs.ps1 -Action unpack -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKey data@mycompany
  
  .Example
    # Reconcile files in folder ".\targetdir"
-   .\ptrFiles.ps1 -Action reconcile -Path ".\targetdir" 
+   .\ptrDocs.ps1 -Action reconcile -Path ".\targetdir" 
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a password
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
+   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a password
-   .\ptrFiles.ps1 -Action unpack -ArchiveFileName "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
+   .\ptrDocs.ps1 -Action unpack -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\02*" where the folder name starts with "02" using a password
-   .\ptrFiles.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
+   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
 
 #>
 
 param (
     [Parameter(Mandatory)][String] $Action, 
     [Parameter(Mandatory)][String] $Path, 
-    [String] $RecipientKeyName,
+    [String] $RecipientKey,
     [String] $SecretKey, 
-    [String] $ArchiveFileName, 
-    [String] $RootFolderName,
+    [String] $ArchiveFile, 
+    [String] $RootFolder,
     [String] $FileFilter,
-    [String] $ReconcileFileName, 
-    [String] $SecretFileName, 
+    [String] $ReconcileFile, 
+    [String] $SecretFile, 
     [String] $CloudProfile,
     [switch] $ExcludeHash,
     [String] $LogPath
 
 )
 
-Import-Module .\PeterFiles
+Import-Module .\PeterDocs
 
-$default_dateLocal = Get-Date -Format "yyyyMMdd_HHmm"
-$default_archiveFile = ".\ptr_file_##date##.7z"
-$default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
-
-
-
-# Main code logic starts here
-function Invoke-Main {
     
     $actioned = $false
 
@@ -230,212 +221,97 @@ function Invoke-Main {
             Install-Module -Name 7Zip4Powershell -Scope CurrentUser
             Install-Module -Name AWS.Tools.Installer -Scope CurrentUser
             Install-Module -Name AWS.Tools.S3  -Scope CurrentUser    
+            Install-Module -Name Meerkat.PeterDocs  -Scope CurrentUser    
         } else {
             Install-Module -Name 7Zip4Powershell -Scope $cloudProfile
             Install-Module -Name AWS.Tools.Installer -Scope $cloudProfile
             Install-Module -Name AWS.Tools.S3  -Scope $cloudProfile
+            Install-Module -Name Meerkat.PeterDocs  -Scope $cloudProfile    
         }
     }
 
     if ($action -eq "Pack") {
         $actioned = $true
-
-        if ($RecipientKeyName -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
-                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            }
-        }
-
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for packing" 
-            Write-Host "Recipient Key Name or Secret Key required for packing"  -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        
-        if ($rootFolderName -eq "") {
-            if ($path.EndsWith("*")) {
-                Write-Log "Root folder required for packing when using wild card for Path" 
-                Write-Host "Root folder required for packing when using wild card for Path"  -ForegroundColor Red
-                Close-Log
-                return
-            } else {
-                $rootFolderName = $path
-            }
-        }
-
-        if ($ArchiveFileName -eq "") {
-            $ArchiveFileName = $default_archiveFile.Replace("##date##", $default_dateLocal)
-        }
-
-        if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
-            {
-                $secretFileName = $ArchiveFileName + ".key"
-            }
-            $secret = New-RandomPassword -Length 80
-            Protect-CmsMessage -To $recipientKeyName -OutFile $secretFileName -Content $secret 
-        } else {
-            $secret = $SecretKey
-        }
-
-        Invoke-Pack -TransferFolder $path -Secret $secret -CompressFile $ArchiveFileName -ReconcileFile $reconcileFileName -RootFolder $rootFolderName -FileFilter $fileFilter
+        Compress-Peter -TransferFolder $path -Secret $secret -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter
     }
 
 
     if ($action -eq "Put") {
-        $actioned = $true
-        
-        if ($ArchiveFileName -eq "") {
-            Write-Log "Archive file name required" 
-            Write-Host "Archive file name required"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-
-        if (!(Test-Path -Path $ArchiveFileName )) {
-            Write-Log "Archive file '$ArchiveFileName' not found"
-            Write-Host "Archive file '$ArchiveFileName' not found"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-
-        Invoke-PutArchive -CompressFile $archiveFileName -TargetPath $path -SecretFile $secretFileName -TargetProfile $cloudProfile
+        $actioned = $true       
+        Send-Peter -ArchiveFile $archiveFile -TargetPath $path -SecretFile $secretFile -TargetProfile $cloudProfile
     }
 
 
     if ($action -eq "Get") {
         $actioned = $true
-        
-        if ($ArchiveFileName -eq "") {
-            Write-Log "Archive file name required" 
-            Write-Host "Archive file name required"  -ForegroundColor Red
-            Close-Log
-            return
-        }
-        
-        Invoke-GetArchive -CompressFile $archiveFileName -SourcePath $path -SecretFile $secretFileName -SourceProfile $cloudProfile
+        Receive-Peter -ArchiveFile $archiveFile -SourcePath $path -SecretFile $secretFile -SourceProfile $cloudProfile
     }
 
 
     if ($action -eq "Unpack") {
         $actioned = $true
-
-        if ($RecipientKeyName -eq "") {
-            $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEYNAME"
-            if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
-                $RecipientKeyName = [System.Environment]::GetEnvironmentVariable($getEnvName)
-            }
-        }
-
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for unpacking" 
-            Write-Host "Recipient Key Name or Secret Key required for unpacking" -ForegroundColor Red
-            Close-Log
-            return
-        } 
-        if ($ArchiveFileName -eq "") {
-                Write-Log "Archive file Name required for unpacking" 
-                Write-Host "Archive file Name required for unpacking" -ForegroundColor Red
-                Close-Log
-                return
-        } 
-        
-        if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
-            {
-                $secretFileName = $ArchiveFileName + ".key"
-            }
-            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
-        } else {
-            $secret = $SecretKey
-        }
-        Invoke-Unpack -RestoreFolder $path -Secret $secret -CompressFile $ArchiveFileName
-        
+        Expand-Peter -RestoreFolder $path -Secret $secret -ArchiveFile $ArchiveFile      
     }
 
 
     if ($action -eq "ReconcileFile") {
         $actioned = $true
-        if ($reconcileFileName -eq "")
-        {
-            $reconcileFileName = $default_reconcileFile
-        }
-        Set-Reconcile -ReconcileFile $reconcileFileName -FolderName $path -Feedback -RootFolderName $rootFolderName -FileFilter $fileFilter
+        Build-PeterReconcile -ReconcileFile $reconcileFile -FolderName $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter
     }
 
 
     if ($action -eq "Reconcile") {
         $actioned = $true
-        if ($reconcileFileName -eq "")
-        {
-            $reconcileFileName = $default_reconcileFile
-        }
-        $localReconcileFile = Join-Path -Path $path -ChildPath $reconcileFileName
-        Invoke-Reconcile -ReconcileFile $localReconcileFile -Folder $path -RootFolder $rootFolderName
+        Compare-Peter -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder
     }
 
     if ($action -eq "ArchiveInformation") {
         $actioned = $true
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name or Secret Key required for 7Zip information" 
-            Write-Host "Recipient Key Name or Secret Key required for 7Zip information"  -ForegroundColor Red
-            Close-Log
+        if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
+            Write-Host "Recipient Key or Secret Key required for 7Zip information"  -ForegroundColor Red
             return
         } 
         
         if ($SecretKey -eq "") {
-            if ($secretFileName -eq "")
+            if ($SecretFile -eq "")
             {
-                $secretFileName = $ArchiveFileName + ".key"
+                $SecretFile = $ArchiveFileName + ".key"
             }
-            $secret = Unprotect-CmsMessage -To $recipientKeyName -Path $secretFileName
+            $secret = Unprotect-CmsMessage -To $RecipientKey -Path $SecretFile
         } else {
             $secret = $SecretKey
         }
-        Write-Log "Retrieving archive information"
-        Write-Host "Retrieving archive information"
-        
-        Get-7ZipInformation -ArchiveFileName $ArchiveFileName -Password $secret
+        Write-Host "Retrieving archive information"      
+        Get-7ZipInformation -ArchiveFileName $ArchiveFile -Password $secret
     }
 
 
     if ($action -eq "MakeCert") {
         $actioned = $true
-        if (($RecipientKeyName -eq "") -and ($SecretKey -eq "")) {
-            Write-Log "Recipient Key Name required to create a standard certificate" 
+        if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
             Write-Host "Recipient Key Name required to create a standard certificate"  -ForegroundColor Red
-            Close-Log
             return
         } 
         if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
             Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            Close-Log
             return
         } 
 
-        Write-Log "Making a file encryption certificate"
-        Write-Host "Making a file encryption certificate"
-        
-        New-SelfSignedCertificate -Subject $RecipientKeyName -KeyFriendlyName $RecipientKeyName -DnsName $RecipientKeyName -CertStoreLocation $Path -KeyUsage KeyEncipherment,DataEncipherment, KeyAgreement -Type DocumentEncryptionCert
+        Write-Host "Making a file encryption certificate"      
+        New-SelfSignedCertificate -Subject $RecipientKey -KeyFriendlyName $RecipientKey -DnsName $RecipientKey -CertStoreLocation $Path -KeyUsage KeyEncipherment,DataEncipherment, KeyAgreement -Type DocumentEncryptionCert
     }
 
 
     if ($action -eq "ListCert") {
         $actioned = $true
         if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Log "The -Path value needs to be 'Cert:\CurrentUser\My'" 
             Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            Close-Log
             return
         } 
 
-        Write-Log "Listing encryption certificates"
         Write-Host "Listing encryption certificates"
         
-        if ($RecipientKeyName -eq "")
+        if ($RecipientKey -eq "")
         {
             Get-Childitem -Path $Path -DocumentEncryptionCert
         } else {
@@ -445,7 +321,7 @@ function Invoke-Main {
             Write-Host "Thumbprint                                Subject"
             Write-Host "----------                                -------"
             Get-Childitem -Path $Path -DocumentEncryptionCert | ForEach-Object {
-                if ($_.Subject -eq ("CN=$RecipientKeyName"))
+                if ($_.Subject -eq ("CN=$RecipientKey"))
                 {
                     Write-Host "$($_.Thumbprint)  $($_.Subject)"
                 }
@@ -456,7 +332,6 @@ function Invoke-Main {
 
     if (!($actioned))
     {
-        Write-Log "Unknown action '$action'.  No processing performed" 
         Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
         Write-Host "Recognised actions: "
         Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
@@ -470,29 +345,7 @@ function Invoke-Main {
         
         Write-Host ""
         Write-Host "For help use command "
-        Write-Host "    Get-Help .\ptrFiles.ps1"
+        Write-Host "    Get-Help .\ptrDocs.ps1"
     }
 
-    Close-Log
-}
 
-
-$dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
-Write-Log "***********************************************************************************"
-Write-Log "*   Start of processing: [$dateTimeStart]"
-Write-Log "***********************************************************************************"
-
-
-Write-Log "Script parameters follow"
-ForEach ($boundParam in $PSBoundParameters.GetEnumerator())
-{
-    if ($boundParam.Key -eq "SecretKey") {
-        Write-Log "Parameter: $($boundParam.Key)   Value: ************** "
-    } else {
-        Write-Log "Parameter: $($boundParam.Key)   Value: $($boundParam.Value) "
-    }
-}
-Write-Log ""
-
-
-Invoke-Main

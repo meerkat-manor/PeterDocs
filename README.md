@@ -1,14 +1,13 @@
-# ptrFiles - Protect, Transfer, Reconcile Files
+# PeterDocs - Protect, Transfer, Reconcile Dcouments
 
 ## Summary
 
-ptrFiles is for Protecting, Transfering and Reconciling Files on remote computer
+PeterDocs is for Protecting, Transfering and Reconciling documents on remote computer
 where the computers are isolated or on different networks.
 
 The process uses a Windows PowerShell script and both the source and target computers
 that execute the code are required to be installed with Windows PowerShell.
 
-The folder contents at source are archived and encrypted into a single file.  You 
 transfer the file to your target, where the content are unpacked using the decryption
 key. After archive contents are restored you can execute the reconcile function
 to veriy that the contents are transferred, unaltered.
@@ -19,7 +18,7 @@ using tools such as:
 * Microsoft ROBOCOPY
 * rsync
 
-Alternatively, you can use backup and restore utilities on the folder, and rely that 
+Alternatively, you can use backup and restore utilities on the folder, and rely that
 the contents are restored correctly.  If you want this to be secure, ensure
 the backup is encrypted.
 
@@ -32,8 +31,7 @@ JAM Software FileList.
 ## Background
 
 The script was born out a necessity to transfer a large volume of photographs
-from one server to another, where shared network drives was not a feasible
-solution.
+from a media server to cloud backup.
 
 ## Usage
 
@@ -41,13 +39,17 @@ Packages source folder contents into a 7ZIP file, adding a reconciliation
 file to the 7ZIP file and then encrypting the contents.  Send
 
 * this script
-* the 7ZIP package file 
-* plus optional SecretFilename ( if using RecipientKeyName ) to the target or recipient.
+* the 7ZIP package file
+* plus optional Secret File ( if using Recipient Key ) to the target or recipient.
+
+Alternatively you can direct the recipient to the PowerShell Gallery and ask them to
+download the PeterDocs module and invoke the restore and reconcile commands from
+within a PowerShell terminal window.
 
 The source folder is not altered and only read rights are required. A log
-file is written at exceution to record activity.
+file is written at execution to record activity.
 
-The SecretFileName can be sent via email, while the 7ZIP can go different routes
+The Secret File can be sent via email, while the 7ZIP can go different routes
 due to possible size such as:
 
 * Cloud storage provider
@@ -68,9 +70,9 @@ and your documents have additonal protection.
 
 A log file is produced on execution.  Repeated executions on the same day
 will add text content to the same log file.  The default log name takes the form:
-"ptr_files_yyyy-MM-dd.log"
+"PETERDOCS_yyyy-MM-dd.log"
 
-You will need to have installed the 7Zip4Powershell PowerShell cmdlet 
+You will need to have installed the 7Zip4Powershell PowerShell cmdlet
 before using the pack or unpack actions.  You can install the cmdlet
-by executing 
-.\ptrFiles.ps1 -Action install -Path ".\"
+by executing
+.\ptrDocs.ps1 -Action install -Path ".\"

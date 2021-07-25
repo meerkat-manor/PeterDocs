@@ -30,6 +30,10 @@
 #>
 
 
+$global:default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
+$global:LogPathName = ""
+
+
 function Open-Log {
 
     $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
@@ -46,15 +50,15 @@ function Write-Log {
 
     $date = Get-Date -f "yyyy-MM-dd"
 
-    if (($null -eq $LogPathName) -or ($LogPathName -eq ""))
+    if (($null -eq $global:LogPathName) -or ($global:LogPathName -eq ""))
     {
-        $LogPathName = Join-Path -Path ".\" -ChildPath "Logs"
+        $global:LogPathName = Join-Path -Path ".\" -ChildPath "Logs"
     }
     $logName = $(Get-SoftwareName) + "_$date.log"
-    $sFullPath = Join-Path -Path $LogPathName -ChildPath $logName 
+    $sFullPath = Join-Path -Path $global:LogPathName -ChildPath $logName 
 
-    if (!(Test-Path -Path $LogPathName)) {
-        $null = New-Item -Path $LogPathName -ItemType Directory
+    if (!(Test-Path -Path $global:LogPathName)) {
+        $null = New-Item -Path $global:LogPathName -ItemType Directory
     }
 
     if (!(Test-Path -Path $sFullPath)) {
@@ -226,11 +230,11 @@ function Get-ConvenientFileSize
  
  .Example
    # Create a reconcile file for folder "C:\sourcefiles\"
-   Set-Reconcile -SourceFolder "C:\sourcefiles\" -ReconcileFile ".\myreconcile.csv"
+   Build-PeterReconcile -SourceFolder "C:\sourcefiles\" -ReconcileFile ".\myreconcile.csv"
 
 #>
 
-function Set-Reconcile
+function Build-PeterReconcile
 {
 Param( 
     [Parameter(Mandatory)][String] $SourceFolder,
@@ -246,13 +250,13 @@ Param(
 
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     if ($Feedback) {
         Open-Log
             
-        Write-Log "Function 'Set-Reconcile' parameters follow"
+        Write-Log "Function 'Build-PeterReconcile' parameters follow"
         Write-Log "Parameter: SourceFolder   Value: $SourceFolder "
         Write-Log "Parameter: ReconcileFile   Value: $ReconcileFile "
         Write-Log "Parameter: RootFolder   Value: $RootFolder "
@@ -552,11 +556,11 @@ function Invoke-SinglePack
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
    # A default archive named file is created which includes a date and time in the name.
    # A file with the postifx ".key" is also generated alongside the 7ZIP file
-   Invoke-Pack -SourceFolder ".\transferpack\" -RecipientKeyName data@mycompany
+   Compress-Peter -SourceFolder ".\transferpack\" -RecipientKeyName data@mycompany
  
 #>
 
-function Invoke-Pack
+function Compress-Peter
 {
 Param( 
     [Parameter(Mandatory)][String] $SourceFolder,
@@ -574,12 +578,12 @@ Param(
 
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     Open-Log
     
-    Write-Log "Function 'Invoke-Pack' parameters follow"
+    Write-Log "Function 'Compress-Peter' parameters follow"
     Write-Log "Parameter: SourceFolder   Value: $SourceFolder "
     Write-Log "Parameter: RecipientKey   Value: $RecipientKey "
     if ($null -eq $SecretKey) {
@@ -723,9 +727,9 @@ Param(
     [int] $archiveFileCount = $archiveInfo.FilesCount
 
     if ($ExcludeHash) {
-        Set-Reconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash -ProcessFileCount $archiveFileCount
+        Build-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash -ProcessFileCount $archiveFileCount
     } else {
-        Set-Reconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ProcessFileCount $archiveFileCount
+        Build-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ProcessFileCount $archiveFileCount
     }
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconcile file '$ReconcileFile' was not created.  See any previous errors"
@@ -831,11 +835,11 @@ Param(
  .Example
    # 
    # 
-   Invoke-PutArchive -ArchiveFile "mybackup.7z" -TargetPath 
+   Send-Peter -ArchiveFile "mybackup.7z" -TargetPath 
  
 #>
 
-function Invoke-PutArchive
+function Send-Peter
 {
 Param( 
     [Parameter(Mandatory)][String] $ArchiveFile,
@@ -849,12 +853,12 @@ Param(
 
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     Open-Log
 
-    Write-Log "Function 'Invoke-PutArchive' parameters follow"
+    Write-Log "Function 'Send-Peter' parameters follow"
     Write-Log "Parameter: ArchiveFile   Value: $ArchiveFile "
     Write-Log "Parameter: TargetPath   Value: $TargetPath "
     Write-Log "Parameter: SecretFile   Value: $SecretFile "
@@ -981,13 +985,13 @@ Param(
         $targetObject = $TargetPath.Substring($offset)
         Write-Log "Transferring '$ArchiveFile' file to host '$bucketHost' folder '$targetObject'"
         Write-Host "Transferring '$ArchiveFile' file to host '$bucketHost' folder '$targetObject'"
-        $b2Upload = Invoke-B2SUpload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $ArchiveFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
+        $b2Upload = Send-B2Upload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $ArchiveFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
         Write-Log "Upload: $b2Upload"
         if (Test-Path -Path $SecretFile) {
             $targetObject = $TargetPath.Substring($offset) + ".key"
             Write-Log "Transferring '$SecretFile' file to host '$bucketHost' folder '$targetObject'"
             Write-Host "Transferring '$SecretFile' file to host '$bucketHost' folder '$targetObject'"
-            $b2Upload = Invoke-B2SUpload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $SecretFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
+            $b2Upload = Send-B2Upload -BucketHost $b2UploadUri.bucketId -TargetPath $targetObject  -FileName $SecretFile -ApiUri $b2UploadUri.uploadUri -ApiToken $b2UploadUri.Token
             Write-Log "Upload: $b2Upload"
         }
         $targetObject = $TargetPath.Substring($offset)
@@ -1099,11 +1103,11 @@ Param(
  .Example
    # 
    # 
-   Invoke-PutArchive -ArchiveFile "mybackup.7z" -TargetPath 
+   Receive-Peter -ArchiveFile "mybackup.7z" -TargetPath 
  
 #>
 
-function Invoke-GetArchive
+function Receive-Peter
 {
 Param( 
     [Parameter(Mandatory)][String] $SourcePath,
@@ -1117,12 +1121,12 @@ Param(
         
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     Open-Log
 
-    Write-Log "Function 'Invoke-PutArchive' parameters follow"
+    Write-Log "Function 'Receive-Peter' parameters follow"
     Write-Log "Parameter: SourcePath   Value: $SourcePath "
     Write-Log "Parameter: ArchiveFile   Value: $ArchiveFile "
     Write-Log "Parameter: SecretFile   Value: $SecretFile "
@@ -1234,7 +1238,7 @@ Param(
         $sourceObject = $SourcePath.Substring($offset)
         Write-Log "Fetching '$ArchiveFile' file from host '$bucketHost' folder '$sourceObject'"
         Write-Host "Fetching '$ArchiveFile' file from host '$bucketHost' folder '$sourceObject'"
-        Invoke-B2SDownload -BucketHost $bucketHost -SourcePath $sourceObject -FileName $ArchiveFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
+        Receive-B2Download -BucketHost $bucketHost -SourcePath $sourceObject -FileName $ArchiveFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
         if (!(Test-Path -Path $ArchiveFile)) {
             Write-Log "Archive file '$sourceObject' not found." 
             Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
@@ -1243,7 +1247,7 @@ Param(
             $secretFile = $ArchiveFile + ".key"
             Write-Log "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
             Write-Host "Fetching '$secretFile' file from host '$bucketHost' folder '$sourceObject'"
-            Invoke-B2SDownload -BucketHost $bucketHost -SourcePath $sourceObject -FileName $secretFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
+            Receive-B2Download -BucketHost $bucketHost -SourcePath $sourceObject -FileName $secretFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
             if (!(Test-Path -Path $secretFile)) {
                 Write-Log "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
                 Write-Host "Secret file '$sourceObject' not found. Required if you are using recipient keys" 
@@ -1350,16 +1354,16 @@ Param(
    # Unpack all the files in the archive file "myarchive.7z" into folder
    # ".\retsoredpack\" using a private-public key as decrypt and
    # checking for default file "myarchive.7z.key"
-   Invoke-Unpack -ArchiveFile "myarchive.7z" -RestoreFolder ".\restorepack\" -RecipientKey data@mycompany
+   Expand-Peter -ArchiveFile "myarchive.7z" -RestoreFolder ".\restorepack\" -RecipientKey data@mycompany
  
  .Example
    # Unpack all the files in the archive file "myarchive.7z" into folder
    # ".\restorepack\" using a secret of "longAndComplex9!key"
-   Invoke-Unpack -ArchiveFile "myarchive.7z" -RestoreFolder ".\restorepack\" -SecretKey "longAndComplex9!key"
+   Expand-Peter -ArchiveFile "myarchive.7z" -RestoreFolder ".\restorepack\" -SecretKey "longAndComplex9!key"
  
 #>
 
-function Invoke-Unpack
+function Expand-Peter
 {
 Param( 
     [Parameter(Mandatory)][String] $ArchiveFile,
@@ -1372,12 +1376,12 @@ Param(
 
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     Open-Log
     
-    Write-Log "Function 'Invoke-Unpack' parameters follow"
+    Write-Log "Function 'Expand-Peter' parameters follow"
     Write-Log "Parameter: ArchiveFile   Value: $ArchiveFile "
     Write-Log "Parameter: RestoreFolder   Value: $RestoreFolder "
     Write-Log "Parameter: RecipientKey   Value: $RecipientKey "
@@ -1490,15 +1494,15 @@ Param(
 
  .Example
    # Reconcile folder ".\restorefolder\" using default reconcile file
-   Invoke-Reconcile -RestoreFolder ".\transferfolder\" 
+   Compare-Peter -RestoreFolder ".\transferfolder\" 
  
  .Example
    # Reconcile folder ".\restorefolder\" using the reconcile
    # file located at "C:\reconcileme.csv"
-   Invoke-Reconcile -RestoreFolder ".\transferfolder\"  -ReconcileFile "C:\reconcileme.csv"
+   Compare-Peter -RestoreFolder ".\transferfolder\"  -ReconcileFile "C:\reconcileme.csv"
 #>
 
-function Invoke-Reconcile
+function Compare-Peter
 {
 Param( 
     [Parameter(Mandatory)][String] $RestoreFolder,
@@ -1510,12 +1514,12 @@ Param(
 
     if (($null -ne $LogPath) -and ($LogPath -ne ""))
     {
-        $LogPathName = $LogPath
+        $global:LogPathName = $LogPath
     }
 
     Open-Log
     
-    Write-Log "Function 'Invoke-Reconcile' parameters follow"
+    Write-Log "Function 'Compare-Peter' parameters follow"
     Write-Log "Parameter: RestoreFolder   Value: $RestoreFolder "
     Write-Log "Parameter: ReconcileFile   Value: $ReconcileFile "
     Write-Log "Parameter: RootFolder   Value: $RootFolder "
@@ -1645,10 +1649,7 @@ Param(
     Close-Log
 }
 
-
-$default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
-$LogPathName = ""
 $getEnvName = $(Get-SoftwareName) + "_LOGPATH"
 if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
-    $LogPathName = [System.Environment]::GetEnvironmentVariable($getEnvName)
+    $global:LogPathName = [System.Environment]::GetEnvironmentVariable($getEnvName)
 }
