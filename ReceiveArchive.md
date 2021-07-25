@@ -5,6 +5,8 @@
 Once the archive file is sent, you need to download it from its intermediate
 location if the source and destination locations are not directky connected.
 
+You can user other tools you have available to download the archive file.
+
 ## When
 
 The archive is received after it sent.  The assunmption is that cloud storage
@@ -35,7 +37,7 @@ The "s3" prefix is to download from AWS S3.  The "b2" prefix
 is to download from Backblaze.
 
 If you are dowloading from AWS you can specify the AWS profile name
-in parameter ```SourceProfile```.  In this situtation the profile 
+in parameter ```SourceProfile```.  In this situtation the profile
 needs to exist in the AWS credentials on your local device and user profile.
 
 If you are downloading from Backblaze you specify the ```AccountId``` and the
@@ -55,7 +57,7 @@ use other tools to download the archive file and the key file.
 
 The function will not expand or reconcile the restore at the destination.
 
-Please ensure you have sufficent storage to accomodate the local copy of the 
+Please ensure you have sufficent storage to accomodate the local copy of the
 archive and space to unpack it.
 
 ## Expand Usage

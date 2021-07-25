@@ -76,3 +76,11 @@ You will need to have installed the 7Zip4Powershell PowerShell cmdlet
 before using the pack or unpack actions.  You can install the cmdlet
 by executing
 .\ptrDocs.ps1 -Action install -Path ".\"
+
+## Further Reading
+
+[Design](Design.md)
+
+[Install](Install.md)
+
+[Compress](Compress.md)
