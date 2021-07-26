@@ -10,4 +10,6 @@ secure, unpack and reconcile the restored/cloned documents.
 
 ## Technology
 
-PeterDocs is written as a PowerShell module and uses a 7ZIP and AWS modules.
+PeterDocs is written as a PowerShell module and uses the 7ZIP and AWS modules.
+
+The AWS module is only used if you are transferring to AWS S3 bucket or compatible destination.

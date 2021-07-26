@@ -2,13 +2,14 @@
 
 ## Summary
 
-PeterDocs is for Protecting, Transfering and Reconciling documents on remote computer
-where the computers are isolated or on different networks.
+PeterDocs is for [Protecting](Encryption.md), [Transferring](SendArchive.md) and [Reconciling](Reconcile.md) documents
+on a remote computer where the computers are isolated or on different networks.
 
-The process uses a Windows PowerShell script and both the source and target computers
-that execute the code are required to be installed with Windows PowerShell.
+The process uses a Windows PowerShell module and script.  Both the source and target computers
+that execute the code are required to have Windows PowerShell installed.
 
-transfer the file to your target, where the content are unpacked using the decryption
+Use the script to create an encrypted archive of the source folder and its contents, then
+transfer the archive file to your target, where the content are unpacked using the decryption
 key. After archive contents are restored you can execute the reconcile function
 to veriy that the contents are transferred, unaltered.
 
@@ -30,15 +31,17 @@ JAM Software FileList.
 
 ## Background
 
-The script was born out a necessity to transfer a large volume of photographs
-from a media server to cloud backup.
+The script was born out of necessity to transfer a large volume of photographs
+from a media server to cloud storage.  Commonly photographs are stored in many
+folders and can be large in number and size because of the increased
+resolution of digital cameras.
 
 ## Usage
 
 Packages source folder contents into a 7ZIP file, adding a reconciliation
 file to the 7ZIP file and then encrypting the contents.  Send
 
-* this script
+* this script or instructions on where to get the script
 * the 7ZIP package file
 * plus optional Secret File ( if using Recipient Key ) to the target or recipient.
 
@@ -72,10 +75,8 @@ A log file is produced on execution.  Repeated executions on the same day
 will add text content to the same log file.  The default log name takes the form:
 "PETERDOCS_yyyy-MM-dd.log"
 
-You will need to have installed the 7Zip4Powershell PowerShell cmdlet
-before using the pack or unpack actions.  You can install the cmdlet
-by executing
-.\ptrDocs.ps1 -Action install -Path ".\"
+You will need to install the PeterDocs module from the PowerShell gallery or
+via local file NuGet package file if Internet access is limited.
 
 ## Further Reading
 
