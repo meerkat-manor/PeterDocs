@@ -45,8 +45,9 @@
 
  .Parameter Action
   Action to perform, which can be:
-  - Install             : Install 7Zip4PowerShell and other modules
   - Pack                : Archive the contents of a folder(s)
+  - Put                 : Send the archive to AWS S3 or Backblaze
+  - Get                 : Receive the archive from AWS S3 or Backblaze
   - Unpack              : Unpack the archive, but no reconfile is performed
   - Reconcile           : Reconcile the contents in the restored folder
   - ReconcileFile       : Generate reconfile file.  The pack process does this.
@@ -194,75 +195,92 @@
 
 #>
 
+[CmdletBinding()]
 param (
-    [Parameter(Mandatory)][String] $Action, 
-    [Parameter(Mandatory)][String] $Path, 
+    [Parameter(Mandatory)]
+    [Alias("Task")]
+    [String] $Action, 
+
+    [Parameter(Mandatory)]
+    [Alias("Directory","DirectoryPath","Folder","FolderPath")]
+    [String] $Path, 
+
     [String] $RecipientKey,
+
+    [Alias("Password")]
     [String] $SecretKey, 
+
+    [Alias("CompressFile")]
     [String] $ArchiveFile, 
+
     [String] $RootFolder,
+
     [String] $FileFilter,
+
     [String] $ReconcileFile, 
+
     [String] $SecretFile, 
+
+    [Alias("Profile", "Username")]
     [String] $CloudProfile,
+
     [switch] $ExcludeHash,
-    [String] $LogPath
+
+    [switch] $IncludeExif,
+
+    [String] $LogPath = ""
 
 )
 
 Import-Module .\PeterDocs
 
-    
     $actioned = $false
-
-    if ($action -eq "Install") {
-        $actioned = $true
-        if ($cloudProfile -eq "") {
-            Install-Module -Name 7Zip4Powershell -Scope CurrentUser
-            Install-Module -Name AWS.Tools.Installer -Scope CurrentUser
-            Install-Module -Name AWS.Tools.S3  -Scope CurrentUser    
-            Install-Module -Name Meerkat.PeterDocs  -Scope CurrentUser    
-        } else {
-            Install-Module -Name 7Zip4Powershell -Scope $cloudProfile
-            Install-Module -Name AWS.Tools.Installer -Scope $cloudProfile
-            Install-Module -Name AWS.Tools.S3  -Scope $cloudProfile
-            Install-Module -Name Meerkat.PeterDocs  -Scope $cloudProfile    
-        }
-    }
 
     if ($action -eq "Pack") {
         $actioned = $true
-        Compress-Peter -TransferFolder $path -Secret $secret -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter
+        if ($ExcludeHash) {
+          Compress-Peter -ExcludeHash -SourceFolder $path -SecretKey $SecretKey -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -IncludeExif
+        } else {
+          Compress-Peter -SourceFolder $path -SecretKey $SecretKey -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -IncludeExif
+        }
     }
 
 
     if ($action -eq "Put") {
         $actioned = $true       
-        Send-Peter -ArchiveFile $archiveFile -TargetPath $path -SecretFile $secretFile -TargetProfile $cloudProfile
+        Send-Peter -ArchiveFile $archiveFile -TargetPath $path -SecretFile $secretFile -TargetProfile $cloudProfile -LogPath $LogPath
     }
 
 
     if ($action -eq "Get") {
         $actioned = $true
-        Receive-Peter -ArchiveFile $archiveFile -SourcePath $path -SecretFile $secretFile -SourceProfile $cloudProfile
+        Receive-Peter -ArchiveFile $archiveFile -SourcePath $path -SecretFile $secretFile -SourceProfile $cloudProfile -LogPath $LogPath
     }
 
 
     if ($action -eq "Unpack") {
         $actioned = $true
-        Expand-Peter -RestoreFolder $path -Secret $secret -ArchiveFile $ArchiveFile      
+        Expand-Peter -RestoreFolder $path -SecretKey $secretKey -SecretFile $secretFile -ArchiveFile $ArchiveFile -LogPath $LogPath
     }
 
 
     if ($action -eq "ReconcileFile") {
         $actioned = $true
-        Build-PeterReconcile -ReconcileFile $reconcileFile -FolderName $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter
+        if ($ExcludeHash) {
+          New-PeterReconcile -ExcludeHash -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath
+        } else {
+          New-PeterReconcile -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath -IncludeExif
+        }
     }
 
 
     if ($action -eq "Reconcile") {
         $actioned = $true
-        Compare-Peter -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder
+        if ($ExcludeHash) {
+          Compare-Peter -ExcludeHash -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder -LogPath $LogPath
+        } else {
+          Compare-Peter -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder -LogPath $LogPath
+        }
     }
 
     if ($action -eq "ArchiveInformation") {
@@ -286,50 +304,6 @@ Import-Module .\PeterDocs
     }
 
 
-    if ($action -eq "MakeCert") {
-        $actioned = $true
-        if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
-            Write-Host "Recipient Key Name required to create a standard certificate"  -ForegroundColor Red
-            return
-        } 
-        if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            return
-        } 
-
-        Write-Host "Making a file encryption certificate"      
-        New-SelfSignedCertificate -Subject $RecipientKey -KeyFriendlyName $RecipientKey -DnsName $RecipientKey -CertStoreLocation $Path -KeyUsage KeyEncipherment,DataEncipherment, KeyAgreement -Type DocumentEncryptionCert
-    }
-
-
-    if ($action -eq "ListCert") {
-        $actioned = $true
-        if ($Path -ne "Cert:\CurrentUser\My") {
-            Write-Host "The -Path value needs to be 'Cert:\CurrentUser\My'"  -ForegroundColor Red
-            return
-        } 
-
-        Write-Host "Listing encryption certificates"
-        
-        if ($RecipientKey -eq "")
-        {
-            Get-Childitem -Path $Path -DocumentEncryptionCert
-        } else {
-            Write-Host ""
-            Write-Host "   PSParentPath: Microsoft.PowerShell.Security\Certificate::$Path"
-            Write-Host ""
-            Write-Host "Thumbprint                                Subject"
-            Write-Host "----------                                -------"
-            Get-Childitem -Path $Path -DocumentEncryptionCert | ForEach-Object {
-                if ($_.Subject -eq ("CN=$RecipientKey"))
-                {
-                    Write-Host "$($_.Thumbprint)  $($_.Subject)"
-                }
-            }
-        }
-    }
-
-
     if (!($actioned))
     {
         Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
@@ -340,12 +314,10 @@ Import-Module .\PeterDocs
         Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
         Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
         Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
-        Write-Host "    Install              : Install required packages"
         Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
         
         Write-Host ""
         Write-Host "For help use command "
         Write-Host "    Get-Help .\ptrDocs.ps1"
     }
-
 

@@ -31,11 +31,12 @@
 
 
 $global:default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
+$global:default_exifFile = "##peter_exif##.csv"
 $global:LogPathName = ""
-
+$global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
 
 function Open-Log {
-
+    
     $dateTimeStart = Get-Date -f "yyyy-MM-dd HH:mm:ss"
     Write-Log "***********************************************************************************"
     Write-Log "*   Start of processing: [$dateTimeStart]"
@@ -49,7 +50,7 @@ function Write-Log {
     )
 
     $date = Get-Date -f "yyyy-MM-dd"
-
+    
     if (($null -eq $global:LogPathName) -or ($global:LogPathName -eq ""))
     {
         $global:LogPathName = Join-Path -Path ".\" -ChildPath "Logs"
@@ -100,7 +101,8 @@ param(
 function Test-PasswordQuality
 {
     Param( 
-        [Parameter(Mandatory)][String] $TestPassword
+        [Parameter(Mandatory)]
+        [String] $TestPassword
     ) 
 
     $qualityMatch = $true
@@ -142,20 +144,20 @@ function Get-ConvenientFileSize
     ) 
  
     
-    if ($totalFileSize -ge 1000000000000) {
+    if ($totalFileSize -ge 1TB) {
         $totalRightLabel = "TB"
-        $totalFileXbytes = [math]::Round(($size / 1000000000000), 2)        
+        $totalFileXbytes = [math]::Round(($size / 1TB), 2)        
     } else {
-        if ($totalFileSize -ge 1000000000) {
+        if ($totalFileSize -ge 1GB) {
             $totalRightLabel = "GB"
-            $totalFileXbytes = [math]::Round(($size / 1000000000), 2)        
+            $totalFileXbytes = [math]::Round(($size / 1GB), 2)        
         } else { 
-            if ($totalFileSize -ge 1000000) {
+            if ($totalFileSize -ge 1MB) {
                 $totalRightLabel = "MB"
-                $totalFileXbytes = [math]::Round(($size / 1000000), 2)        
+                $totalFileXbytes = [math]::Round(($size / 1MB), 2)        
             } else {
                 $totalRightLabel = "KB"
-                $totalFileXbytes = [math]::Round(($size / 1000), 2)
+                $totalFileXbytes = [math]::Round(($size / 1KB), 2)
             }
         }
     }
@@ -230,11 +232,11 @@ function Get-ConvenientFileSize
  
  .Example
    # Create a reconcile file for folder "C:\sourcefiles\"
-   Build-PeterReconcile -SourceFolder "C:\sourcefiles\" -ReconcileFile ".\myreconcile.csv"
+   New-PeterReconcile -SourceFolder "C:\sourcefiles\" -ReconcileFile ".\myreconcile.csv"
 
 #>
 
-function Build-PeterReconcile
+function New-PeterReconcile
 {
 Param( 
     [Parameter(Mandatory)][String] $SourceFolder,
@@ -256,7 +258,7 @@ Param(
     if ($Feedback) {
         Open-Log
             
-        Write-Log "Function 'Build-PeterReconcile' parameters follow"
+        Write-Log "Function 'New-PeterReconcile' parameters follow"
         Write-Log "Parameter: SourceFolder   Value: $SourceFolder "
         Write-Log "Parameter: ReconcileFile   Value: $ReconcileFile "
         Write-Log "Parameter: RootFolder   Value: $RootFolder "
@@ -292,7 +294,16 @@ Param(
 
     Write-Log "Generating reconciliation file '$ReconcileFile'"
     Write-Host "Generating reconciliation file '$ReconcileFile'"
-    
+
+    if ($IncludeExif) {
+        if (!(Test-Path -Path $global:MetadataPathName )) {
+            $null = New-Item -Path $global:MetadataPathName -ItemType Directory
+        }
+        $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_exifFile
+        Write-Log "Generating Exif file '$ExifFile'"
+        Set-Content -Path $ExifFile  -Value '"FullName","Author","Title","Subject","Comments","DateTaken","ISO","FNumber"'
+    }
+
     $totalFileCount = 0
     $totalFileSize = 0
 
@@ -307,7 +318,7 @@ Param(
 
     Write-Progress -Activity "Creating reconciliation entries in file $ReconcileFile" -Status "Start" 
 
-    Set-Content -Path $ReconcileFile  -Value '"FullName","LastWriteTime","CreationTime","LastAccessTime","Length","Hash","ParentFolder","Object","Attributes","Extension"'
+    Set-Content -Encoding utf8 -Path $ReconcileFile  -Value '"FullName","LastWriteTime","CreationTime","LastAccessTime","Length","Hash","ParentFolder","Object","Attributes","Extension"'
 
     if ($SourceFolder.StartsWith("@")) {
         Write-Log "Using @ file '$($SourceFolder.Substring(1))'"
@@ -341,13 +352,18 @@ Param(
                         }
                         $record = '"'+$_.FullName.Replace($RootFolder, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
                         $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
-                        $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
-
-                        if ($IncludeExif) {
-                            $null = Get-ImageFileContents -ImageFile $($_.FullName)
-                        }
+                        $record = $record + ','+$_.Length+',"'+$sourceHash+'"'
+                        $record = $record + ',"'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
 
                         Add-Content -Path  $ReconcileFile  -Value $record
+
+                        if ($IncludeExif) {
+                            $exifData = Get-ImageFileContents -ImageFile $($_.FullName)
+                            $exifRecord = '"' + $_.FullName + '","' + $exifData.Author + '","' + $exifData.Title + '","' + $exifData.Subject + '","' + $exifData.Comments + '"'
+                            $exifRecord = $exifRecord + ',"' +  $exifData.DateTaken + '","' + $exifData.Iso + '","' + $exifData.FNumber + '"'
+                
+                            Add-Content -Path $ExifFile  -Value $exifRecord
+                        }
                     
                     }
                 }
@@ -378,12 +394,16 @@ Param(
             $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
             $record = $record + ','+$_.Length+',"'+$sourceHash+'","'+ $_.Directory + '","' + $_.Name + '","' + $_.Attributes+'","'+$_.Extension+'"'
 
+            Add-Content -Path  $ReconcileFile  -Value $record
+
             if ($IncludeExif) {
-                $null = Get-ImageFileContents -ImageFile $($_.FullName)
+                $exifData = Get-ImageFileContents -ImageFile $($_.FullName)
+                $exifRecord = '"' + $_.FullName + '","' + $exifData.Author + '","' + $exifData.Title + '","' + $exifData.Subject + '","' + $exifData.Comments + '"'
+                $exifRecord = $exifRecord + ',"' +  $exifData.DateTaken + '","' + $exifData.Iso + '","' + $exifData.FNumber + '"'
+
+                Add-Content -Path $ExifFile  -Value $exifRecord
             }
 
-            Add-Content -Path  $ReconcileFile  -Value $record
-        
         }
 
     }
@@ -571,6 +591,7 @@ Param(
     [String] $FileFilter ="*",
     [String] $SecretFile, 
     [switch] $ExcludeHash,
+    [switch] $IncludeExif,
     [String] $RootFolder,
     [String] $LogPath
 
@@ -596,6 +617,7 @@ Param(
     Write-Log "Parameter: FileFilter   Value: $FileFilter "
     Write-Log "Parameter: SecretFile   Value: $SecretFile "
     Write-Log "Parameter: ExcludeHash   Value: $ExcludeHash "
+    Write-Log "Parameter: IncludeExif   Value: $IncludeExif "
     Write-Log "Parameter: LogPath   Value: $LogPath "
     Write-Log ""
 
@@ -668,7 +690,10 @@ Param(
 
     if ($ReconcileFile -eq "")
     {
-        $ReconcileFile = $default_reconcileFile
+        if (!(Test-Path -Path $global:MetadataPathName)) {
+            $null = New-Item -Path $global:MetadataPathName -ItemType Directory
+        }
+        $ReconcileFile = Join-Path -Path $global:MetadataPathName -ChildPath $default_reconcileFile
     }
 
     if ($FileFilter -eq "")
@@ -727,9 +752,9 @@ Param(
     [int] $archiveFileCount = $archiveInfo.FilesCount
 
     if ($ExcludeHash) {
-        Build-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash -ProcessFileCount $archiveFileCount
+        New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash -ProcessFileCount $archiveFileCount -IncludeExif
     } else {
-        Build-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ProcessFileCount $archiveFileCount
+        New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ProcessFileCount $archiveFileCount -IncludeExif
     }
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconcile file '$ReconcileFile' was not created.  See any previous errors"
@@ -738,11 +763,11 @@ Param(
         return
     }
 
-    Write-Log "Add reconcile file '$ReconcileFile' to file '$ArchiveFile'"
-    $fullReconcileName = (Get-Item $ReconcileFile).FullName
+    Write-Log "Add folder '$global:MetadataPathName' to file '$ArchiveFile'"
+    $fullMetadatName = (Get-Item $global:MetadataPathName).FullName
     $fullZipName = (Get-Item $ArchiveFile).FullName
-    Compress-7Zip -Path $fullReconcileName -ArchiveFileName $fullZipName -Format SevenZip -Append -Password $secret -EncryptFilenames
-    Remove-Item $fullReconcileName
+    Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames
+    #Remove-Item $fullMetadatName -Recurse
 
     Write-Log "Archive file '$ArchiveFile' created from folder '$SourceFolder'"
     Write-Host "Archive file '$ArchiveFile' created from folder '$SourceFolder'"  -ForegroundColor Green
@@ -1506,6 +1531,7 @@ Param(
     [Parameter(Mandatory)][String] $RestoreFolder,
     [String] $ReconcileFile,
     [String] $RootFolder,
+    [Switch] $ExcludeHash,
     [Switch] $ExtendedCheck,
     [String] $LogPath
 ) 
@@ -1534,7 +1560,7 @@ Param(
 
     if ($ReconcileFile -eq "")
     {
-        $ReconcileFile = Join-Path -Path $RestoreFolder -ChildPath $default_reconcileFile
+        $ReconcileFile = Join-Path -Path (Join-Path -Path $RestoreFolder -ChildPath $global:MetadataPathName) -ChildPath $default_reconcileFile
         Write-Log "Using default reconciliation file '$ReconcileFile'"
         Write-Host "Using default reconciliation file '$ReconcileFile'" 
         If (!(Test-Path -Path $ReconcileFile )) {    
@@ -1572,21 +1598,24 @@ Param(
             $restoreFileName = $(Join-Path -Path $RestoreFolder -ChildPath $_.FullName)    
         }
         If (Test-Path -Path $restoreFileName ) {    
-            if ($_.Hash -ne "") {
-                $targetHash= (Get-FileHash -Path $restoreFileName).Hash
-                if ($_.Hash -ne $targetHash) {
-                    $errorCount = $errorCount + 1
-                    Write-Log "Hash mismatch for file '$restoreFileName' with target value $targetHash"
+            if (!($ExcludeHash)) {
+                if ($_.Hash -ne "") {
+                    $targetHash= (Get-FileHash -Path $restoreFileName).Hash
+                    if ($_.Hash -ne $targetHash) {
+                        $errorCount = $errorCount + 1
+                        Write-Log "Hash mismatch for file '$restoreFileName' with target value $targetHash"
+                    }
+                } else {
+                    $missingHash = $true
                 }
-            } else {
-                $missingHash = $true
             }
-            if ((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
-                Write-Log "Creation mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+
+            if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
+                Write-Log "LastWrite mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.LastWriteTime)"
                 $errorCreateCount = $errorCreateCount + 1
 
-                $dateTimeValue = [Datetime]::ParseExact($_.CreationTime, 'yyyy-MM-ddTHH:mm:ss', $null)
-                $fileValue = (Get-Item -Path $restoreFileName).CreationTime
+                $dateTimeValue = [Datetime]::ParseExact($_.LastWriteTime, 'yyyy-MM-ddTHH:mm:ss', $null)
+                $fileValue = (Get-Item -Path $restoreFileName).LastWriteTime
                 $diff = ($dateTimeValue - $fileValue).Seconds
                 # Allow +/- 2 second discrepancy
                 if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
@@ -1595,11 +1624,25 @@ Param(
             }
             if ((Get-Item -Path $restoreFileName).Length -ne $_.Length) {
                 $errorCount = $errorCount + 1
-                Write-Log "Length mismatch for file '$restoreFileName' with target value $(Get-Item -Path $restoreFileName).Length)"
+                Write-Log "Length mismatch for file '$restoreFileName' with target value $(Get-Item -Path $restoreFileName).Length) expected $($_.Length)"
             }
 
             # Note that last / write access time is not checked by default as it will commonly be changed after restore
             if ($extendedCheck) {
+
+                if ((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
+                    Write-Log "Creation mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.CreationTime)"
+                    $errorCreateCount = $errorCreateCount + 1
+    
+                    $dateTimeValue = [Datetime]::ParseExact($_.CreationTime, 'yyyy-MM-ddTHH:mm:ss', $null)
+                    $fileValue = (Get-Item -Path $restoreFileName).CreationTime
+                    $diff = ($dateTimeValue - $fileValue).Seconds
+                    # Allow +/- 2 second discrepancy
+                    if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
+                        $errorCount = $errorCount + 1
+                    }
+                }
+    
                 if ((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastAccessTime) {
                     $errorCount = $errorCount + 1
                     Write-Log "Last access mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss"))"

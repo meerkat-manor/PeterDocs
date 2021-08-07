@@ -38,6 +38,23 @@ resolution of digital cameras.
 
 ## Usage
 
+Some basic commands in sequence are demonstrated below:
+
+```powershell
+# Create the archive file
+Compress-Peter -SourceFolder "~/Pictures/" -Secret "c0mpleX%S3cret" 
+# Send the archive to S3
+Send-Peter -ArchiveFile "PETERDOCS_20210625_1245.7z" -TargetPath "s3://bucketname/pathpeter/PETERDOCS_20210625_1245.7z"
+# Fetch the archive from S3
+Receive-Peter -ArchiveFile "myarchive.7z" -SourcePath "s3://bucketname/pathpeter/PETERDOCS_20210625_1245.7z" 
+# Expand the archive 
+Expand-Peter -RestoreFolder "c:\backup\pictures" -Secret "c0mpleX%S3cret" -ArchiveFile "myarchive.7z"      
+# Compare the restored files
+Compare-Peter -RestoreFolder "c:\backup\pictures"
+```
+
+The above commands are using the default settings for certain options
+
 Packages source folder contents into a 7ZIP file, adding a reconciliation
 file to the 7ZIP file and then encrypting the contents.  Send
 
@@ -78,10 +95,12 @@ will add text content to the same log file.  The default log name takes the form
 You will need to install the PeterDocs module from the PowerShell gallery or
 via local file NuGet package file if Internet access is limited.
 
+See the [Advanced Usage](Docs/Advanced.md) for more advanced options.
+
 ## Further Reading
 
-[Design](Design.md)
+[Design](Docs/Design.md)
 
-[Install](Install.md)
+[Install](Docs/Install.md)
 
-[Compress](Compress.md)
+[Compress](Docs/Compress.md)
