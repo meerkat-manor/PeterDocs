@@ -5,6 +5,8 @@
 PeterDocs is for [Protecting](Encryption.md), [Transferring](SendArchive.md) and [Reconciling](Reconcile.md) documents
 on a remote computer where the computers are isolated or on different networks.
 
+The PowerShell module is available on [PowerShell Gallery](https://www.powershellgallery.com/packages/PeterDocs)
+
 The process uses a Windows PowerShell module and script.  Both the source and target computers
 that execute the code are required to have Windows PowerShell installed.
 
@@ -43,7 +45,7 @@ from accidental or malicious deletion, which require different controls.
 
 ## Usage
 
-Some basic commands in sequence are demonstrated below:
+Some basic commands in sequence are demonstrated below.  Please alter before use:
 
 ```powershell
 # Create the archive file

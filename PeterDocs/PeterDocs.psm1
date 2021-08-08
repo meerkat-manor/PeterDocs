@@ -26,16 +26,14 @@
  If you ar using the symmetric key then the script will enforce password
  complexity and length on the key value.
  
-
 #>
-
 
 $global:default_reconcileFile = "##peter_files##.csv"
 $global:default_exifFile = "##peter_exif##.csv"
 $global:default_metaFile = "##peter##.json"
 $global:LogPathName = ""
 $global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
-$global:Version = "0.2"
+$global:Version = "0.3"
 
 function Open-Log {
     
