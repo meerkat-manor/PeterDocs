@@ -146,7 +146,7 @@ function MakeNumber {
 }
 
 
-function Get-ImageFileContents {
+function Get-ImageFileExif {
     param(
         [Parameter(Mandatory)]
         [String] $ImageFile
@@ -289,4 +289,87 @@ function Get-ImageFileContents {
     }
 }
 
-#Get-ImageFileContents -ImageFile "E:\tom\Projects\powershell\ptrFiles\assets\03.jpg"
+
+
+function Set-ExifCsvHeader {
+
+    
+    $ExifData = [PSCustomObject][ordered]@{
+        File = ""
+
+        DateTaken = ""
+        DateDigitized = ""
+        DateModified = ""
+
+        Author = ""
+        Title = ""
+        Subject = ""
+        Comments = ""
+        Keywords = ""
+
+        Artist = ""
+        Copyright = ""
+
+        Height = 0
+        Width = 0
+        PixelX = 0
+        PixelY = 0
+        ResolutionX = 0
+        ResolutionY = 0
+
+        CameraMaker = ""
+        CameraModel = ""
+        CameraLabel = ""
+        SoftwareVersion = ""
+
+        LatitudeRef = ""
+        Latitude = ""
+        LongitudeRef = ""
+        Longitude = ""
+
+        ExifVersion = ""
+
+        Flash = $false
+        Iso = 0
+        FocalLength = 0
+        ShutterSpeed = ""
+        Aperture = 0
+        FNumber = 0
+
+    }
+
+    $exifRecord = ''
+    $first = $true
+    $ExifData.PSObject.Properties | foreach-object {
+        if ($first) {
+            $exifRecord = '"' + $_.Name + '"'
+        } else{
+            $exifRecord = $exifRecord + ',"' + $_.Name + '"'
+        }
+        $first = $false
+    }
+
+    return $exifRecord
+
+}
+
+function Set-ExifCsvRecord {
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject] $ExifData
+    )
+
+    $exifRecord = ''
+    $first = $true
+    $ExifData.PSObject.Properties | foreach-object {
+        if ($first) {
+            $exifRecord = '"' + $_.value + '"'
+        } else{
+            $exifRecord = $exifRecord + ',"' + $_.value + '"'
+        }
+        $first = $false
+    }
+
+    return $exifRecord
+
+}

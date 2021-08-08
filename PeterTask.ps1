@@ -2,7 +2,7 @@
  .Synopsis
    Allows the secure transfer and reconciliation of a large number of files
 
-   PTRfile: Protect, Transfer, Reconcile files
+   PTR : Protect, Transfer, Reconcile files
 
  .Description
    Packages source folder contents into a 7ZIP file, adding a reconciliation 
@@ -43,14 +43,14 @@
    .\ptrDocs.ps1 -Action install -Path ".\" 
 
 
- .Parameter Action
+ .Parameter Task
   Action to perform, which can be:
-  - Pack                : Archive the contents of a folder(s)
+  - Compress            : Archive the contents of a folder(s)
   - Put                 : Send the archive to AWS S3 or Backblaze
   - Get                 : Receive the archive from AWS S3 or Backblaze
-  - Unpack              : Unpack the archive, but no reconfile is performed
-  - Reconcile           : Reconcile the contents in the restored folder
-  - ReconcileFile       : Generate reconfile file.  The pack process does this.
+  - Expand              : Unpack the archive, but no reconfile is performed
+  - Compare             : Reconcile the contents in the restored folder
+  - NewReconcile        : Generate reconfile file.  The pack process does this automatically.
   - ArchiveInformation  : Fetch archive information
 
  .Parameter Path
@@ -116,7 +116,7 @@
   Once a reconcile is executed, you can delete this file from the 
   restored location.
 
-  The default name is "##protect_transfer_reconcile_files##.csv"
+  The default name is "##peter_files##.csv"
 
  .Parameter SecretFile
   The secret file name is used with RecipientKey to secure the
@@ -139,6 +139,9 @@
   hash takes compute cycles during pack, you can select to bypass this 
   generation to speed up the packaging.  Excluding the hash does reduce 
   the functionality of the reconciliation at unpack.
+
+ .Parameter IncludeExif
+  Include Exif details into separate file for picture files.
 
  .Parameter LogPath
   The log folder where log files are written.  If the folder does not
@@ -170,41 +173,43 @@
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
    # A file with the postifx ".key" is also generated alongside the 7ZIP file
-   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\" -RecipientKey data@mycompany
+   .\PeterTask.ps1 -Task compress -Path ".\transferpack\" -RecipientKey data@mycompany
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a private-public key
    # You will need the file "transfer_protect_yyyMMdd_hhmm.7z.key" to unpack the encrypted 7ZIP file
-   .\ptrDocs.ps1 -Action unpack -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKey data@mycompany
+   .\PeterTask.ps1 -Task expand -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -RecipientKey data@mycompany
  
  .Example
    # Reconcile files in folder ".\targetdir"
-   .\ptrDocs.ps1 -Action reconcile -Path ".\targetdir" 
+   .\PeterTask.ps1 -Task compare -Path ".\targetdir" 
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a password
-   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
+   .\PeterTask.ps1 -Task compress -Path ".\transferpack\" -SecretKey "fjks932c-x=23ds"
  
  .Example
    # Unpack all files in 7ZIP file "transfer_protect_yyyMMdd_hhmm.7z" to folder ".\targetdir" using a password
-   .\ptrDocs.ps1 -Action unpack -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
+   .\PeterTask.ps1 -Task expand -ArchiveFile "transfer_protect_yyyMMdd_hhmm.7z" -Path ".\targetdir" -SecretKey "fjks932c-x=23ds"
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\02*" where the folder name starts with "02" using a password
-   .\ptrDocs.ps1 -Action pack -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
+   .\PeterTask.ps1 -Task compress -Path ".\transferpack\02*" -SecretKey "fjks932c-x=23ds"
 
 #>
 
 [CmdletBinding()]
 param (
     [Parameter(Mandatory)]
-    [Alias("Task")]
-    [String] $Action, 
+    [ValidateSet("Compress","Expand","Compare","NewReconcile","Put","Get","ArchiveInformation")]
+    [Alias("Action")]
+    [String] $Task, 
 
     [Parameter(Mandatory)]
     [Alias("Directory","DirectoryPath","Folder","FolderPath")]
     [String] $Path, 
 
+    [Alias("Recipient")]
     [String] $RecipientKey,
 
     [Alias("Password")]
@@ -215,6 +220,7 @@ param (
 
     [String] $RootFolder,
 
+    [Alias("Filter")]
     [String] $FileFilter,
 
     [String] $ReconcileFile, 
@@ -224,8 +230,10 @@ param (
     [Alias("Profile", "Username")]
     [String] $CloudProfile,
 
+    [Alias("Hash")]
     [switch] $ExcludeHash,
 
+    [Alias("Exif")]
     [switch] $IncludeExif,
 
     [String] $LogPath = ""
@@ -236,54 +244,42 @@ Import-Module .\PeterDocs
 
     $actioned = $false
 
-    if ($action -eq "Pack") {
+    if ($task -eq "Compress") {
         $actioned = $true
-        if ($ExcludeHash) {
-          Compress-Peter -ExcludeHash -SourceFolder $path -SecretKey $SecretKey -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -IncludeExif
-        } else {
-          Compress-Peter -SourceFolder $path -SecretKey $SecretKey -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -IncludeExif
-        }
+        Compress-Peter -SourceFolder $path -SecretKey $SecretKey  -SecretFile $SecretFile -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
     }
 
 
-    if ($action -eq "Put") {
+    if ($task -eq "Put") {
         $actioned = $true       
         Send-Peter -ArchiveFile $archiveFile -TargetPath $path -SecretFile $secretFile -TargetProfile $cloudProfile -LogPath $LogPath
     }
 
 
-    if ($action -eq "Get") {
+    if ($task -eq "Get") {
         $actioned = $true
         Receive-Peter -ArchiveFile $archiveFile -SourcePath $path -SecretFile $secretFile -SourceProfile $cloudProfile -LogPath $LogPath
     }
 
 
-    if ($action -eq "Unpack") {
+    if ($task -eq "Expand") {
         $actioned = $true
-        Expand-Peter -RestoreFolder $path -SecretKey $secretKey -SecretFile $secretFile -ArchiveFile $ArchiveFile -LogPath $LogPath
+        Expand-Peter -RestoreFolder $path -SecretKey $secretKey -SecretFile $secretFile -ArchiveFile $ArchiveFile -LogPath $LogPath 
     }
 
 
-    if ($action -eq "ReconcileFile") {
+    if ($task -eq "NewReconcile") {
         $actioned = $true
-        if ($ExcludeHash) {
-          New-PeterReconcile -ExcludeHash -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath
-        } else {
-          New-PeterReconcile -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath -IncludeExif
-        }
+        New-PeterReconcile -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath  -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
     }
 
 
-    if ($action -eq "Reconcile") {
+    if ($task -eq "Compare") {
         $actioned = $true
-        if ($ExcludeHash) {
-          Compare-Peter -ExcludeHash -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder -LogPath $LogPath
-        } else {
-          Compare-Peter -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder -LogPath $LogPath
-        }
+        Compare-Peter -ReconcileFile $reconcileFile -RestoreFolder $path -RootFolder $rootFolder -LogPath $LogPath -ExcludeHash:$ExcludeHash 
     }
 
-    if ($action -eq "ArchiveInformation") {
+    if ($task -eq "ArchiveInformation") {
         $actioned = $true
         if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
             Write-Host "Recipient Key or Secret Key required for 7Zip information"  -ForegroundColor Red
@@ -306,14 +302,14 @@ Import-Module .\PeterDocs
 
     if (!($actioned))
     {
-        Write-Host "Unknown action '$action'.  No processing performed"  -ForegroundColor Red
+        Write-Host "Unknown action '$task'.  No processing performed"  -ForegroundColor Red
         Write-Host "Recognised actions: "
-        Write-Host "    Pack                 : Pack folder contents into secure 7Zip file"
+        Write-Host "    Compress             : Pack folder contents into secure 7Zip file"
         Write-Host "    Put                  : Put or send the archive file to remote destination"
         Write-Host "    Get                  : Get or fetch the archive from remote location"
-        Write-Host "    Unpack               : Unpack folder contents from secure 7Zip file"
-        Write-Host "    Reconcile            : Reconcile files in unpack folder with list of packed files"
-        Write-Host "    ReconcileFile        : Generate a reconcile file without packing"
+        Write-Host "    Expand               : Unpack folder contents from secure 7Zip file"
+        Write-Host "    Compare              : Reconcile files in unpack folder with list of packed files"
+        Write-Host "    NewReconcile         : Generate a reconcile file without packing"
         Write-Host "    ArchiveInformation   : Fetch archive information from archive file"
         
         Write-Host ""

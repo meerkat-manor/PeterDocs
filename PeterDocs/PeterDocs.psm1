@@ -30,10 +30,12 @@
 #>
 
 
-$global:default_reconcileFile = "##protect_transfer_reconcile_files##.csv"
+$global:default_reconcileFile = "##peter_files##.csv"
 $global:default_exifFile = "##peter_exif##.csv"
+$global:default_metaFile = "##peter##.json"
 $global:LogPathName = ""
 $global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
+$global:Version = "0.0.1"
 
 function Open-Log {
     
@@ -301,7 +303,7 @@ Param(
         }
         $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_exifFile
         Write-Log "Generating Exif file '$ExifFile'"
-        Set-Content -Path $ExifFile  -Value '"FullName","Author","Title","Subject","Comments","DateTaken","ISO","FNumber"'
+        Set-Content  -Encoding utf8  -Path $ExifFile  -Value $(Set-ExifCsvHeader)
     }
 
     $totalFileCount = 0
@@ -358,11 +360,8 @@ Param(
                         Add-Content -Path  $ReconcileFile  -Value $record
 
                         if ($IncludeExif) {
-                            $exifData = Get-ImageFileContents -ImageFile $($_.FullName)
-                            $exifRecord = '"' + $_.FullName + '","' + $exifData.Author + '","' + $exifData.Title + '","' + $exifData.Subject + '","' + $exifData.Comments + '"'
-                            $exifRecord = $exifRecord + ',"' +  $exifData.DateTaken + '","' + $exifData.Iso + '","' + $exifData.FNumber + '"'
-                
-                            Add-Content -Path $ExifFile  -Value $exifRecord
+                            $exifData = Get-ImageFileExif -ImageFile $($_.FullName)
+                            Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData)
                         }
                     
                     }
@@ -397,11 +396,8 @@ Param(
             Add-Content -Path  $ReconcileFile  -Value $record
 
             if ($IncludeExif) {
-                $exifData = Get-ImageFileContents -ImageFile $($_.FullName)
-                $exifRecord = '"' + $_.FullName + '","' + $exifData.Author + '","' + $exifData.Title + '","' + $exifData.Subject + '","' + $exifData.Comments + '"'
-                $exifRecord = $exifRecord + ',"' +  $exifData.DateTaken + '","' + $exifData.Iso + '","' + $exifData.FNumber + '"'
-
-                Add-Content -Path $ExifFile  -Value $exifRecord
+                $exifData = Get-ImageFileExif -ImageFile $($_.FullName)
+                Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData )
             }
 
         }
@@ -531,7 +527,7 @@ function Invoke-SinglePack
   Once a reconcile is executed, you can delete this file from the 
   restored location.
 
-  The default name is "##protect_transfer_reconcile_files##.csv"
+  The default name is "##peter_files##.csv"
 
  .Parameter SecretFile
   The secret file name is used with RecipientKey to secure the
@@ -751,11 +747,7 @@ Param(
     $archiveInfo = Get-7ZipInformation -ArchiveFileName $ArchiveFile
     [int] $archiveFileCount = $archiveInfo.FilesCount
 
-    if ($ExcludeHash) {
-        New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash -ProcessFileCount $archiveFileCount -IncludeExif
-    } else {
-        New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ProcessFileCount $archiveFileCount -IncludeExif
-    }
+    New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash:$ExcludeHash -ProcessFileCount $archiveFileCount -IncludeExif:$IncludeExif
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconcile file '$ReconcileFile' was not created.  See any previous errors"
         Write-Host "Reconcile file '$ReconcileFile' was not created.  See any previous errors" -ForegroundColor Red
@@ -763,11 +755,34 @@ Param(
         return
     }
 
+    # Write Json file as links
+    $jsonFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_metaFile
+    $jsonData = @{}
+
+    $dataItem = @{"SourceFolder"="$SourceFolder";"RecipientKey"="$RecipientKey";"ArchiveFile"="$ArchiveFile";"FileFilter"="$FileFilter";"SecretFile"="$SecretFile";"ExcludeHash"="$ExcludeHash";}
+    $jsonData.Add("Parameters",$dataItem)
+
+    $dataItem = @{"Name"="PeterDocs";"Author"="Meerkat@merebox.com";"Version"="$global:Version";}
+    $jsonData.Add("Software",$dataItem)
+
+    $items = New-Object System.Collections.ArrayList
+    $dataItem = @{"Reconcile"="$ReconcileFile";"Caption"="File listing of archive for reconciliation";}
+    $null = $items.Add($dataItem)
+    
+    if ($IncludeExif) {
+        $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_exifFile
+        $dataItem = @{"Exif"="$ExifFile";"Caption"="Exif information";}
+        $null = $items.Add($dataItem)
+    }
+
+    $jsonData.Add("Links",$items)
+    $jsonData | ConvertTo-Json -Depth 10 | Out-File $jsonFile
+
     Write-Log "Add folder '$global:MetadataPathName' to file '$ArchiveFile'"
     $fullMetadatName = (Get-Item $global:MetadataPathName).FullName
     $fullZipName = (Get-Item $ArchiveFile).FullName
     Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames
-    #Remove-Item $fullMetadatName -Recurse
+#    Remove-Item $fullMetadatName -Recurse
 
     Write-Log "Archive file '$ArchiveFile' created from folder '$SourceFolder'"
     Write-Host "Archive file '$ArchiveFile' created from folder '$SourceFolder'"  -ForegroundColor Green
@@ -1556,6 +1571,28 @@ Param(
         Write-Host "Folder '$RestoreFolder' does not exist"  -ForegroundColor Red
         Close-Log
         return
+    }
+
+
+    # Check for metadata
+    $jsonFile = Join-Path -Path (Join-Path -Path $RestoreFolder -ChildPath $global:MetadataPathName ) -ChildPath $global:default_metaFile
+    Write-Host "Checking $jsonFile"
+    if (Test-FilesExist $jsonFile) {
+        $jsonData = Get-Content -Raw -Path $jsonFile | ConvertFrom-Json
+
+        $software = $jsonData.Software.Name
+        Write-Host "json: $software"
+        $jsonData.Links | ForEach-Object {
+            $_.PSObject.Properties | ForEach-object {
+                if ($_.Name -eq "Reconcile") {
+                    if ($ReconcileFile -eq "") {
+                        $ReconcileFile = Join-Path -Path $RestoreFolder -ChildPath $_.Value
+                        Write-Log "Using metadata reconciliation file '$ReconcileFile'"
+                        Write-Host "Using metadata reconciliation file '$ReconcileFile'" 
+                    }
+                }
+            }
+        }
     }
 
     if ($ReconcileFile -eq "")

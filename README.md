@@ -32,9 +32,12 @@ JAM Software FileList.
 ## Background
 
 The script was born out of necessity to transfer a large volume of photographs
-from a media server to cloud storage.  Commonly photographs are stored in many
+from a media server to cloud storage for backup.  Commonly photographs are stored in many
 folders and can be large in number and size because of the increased
 resolution of digital cameras.
+
+The backup also required to be secure from accidental distribution.  The backup is not secured
+from accidental or malicious deletion, which are require different controls.
 
 ## Usage
 
@@ -78,7 +81,7 @@ due to possible size such as:
 * USB stick
 
 At the target, unpack the contents to a folder and reconcile the results.  You
-will need write access on the target storage. A log file is written at exceution
+will need write access on the target storage. A log file is written at execution
 to record activity.
 
 Your bulk file transfer is encrypted in transit.  Note that if you use the
