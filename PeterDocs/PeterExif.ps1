@@ -168,8 +168,13 @@ function Get-ImageFileExif {
             [System.IO.FileOptions]::SequentialScan
         )
 
-        $fs = New-Object System.IO.FileStream -ArgumentList $fileStreamArgs
-        $image = [System.Drawing.Image]::FromStream($fs)
+        Try {
+            $fs = New-Object System.IO.FileStream -ArgumentList $fileStreamArgs
+            $image = [System.Drawing.Image]::FromStream($fs)
+        } Catch {
+            # Error likely because not an image file
+            return $null
+        }
 
         $val = Get-ExifContents -ImageStream $image -ExifCode 37378 -Numeric -Size 8 -Parts 2
         if ($null -eq $val -or $val -eq "") {
@@ -284,7 +289,6 @@ function Get-ImageFileExif {
         if ($fs) {
             $fs.close()
         }
-        break
         return $null
     }
 }

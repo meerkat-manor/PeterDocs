@@ -35,7 +35,7 @@ $global:default_exifFile = "##peter_exif##.csv"
 $global:default_metaFile = "##peter##.json"
 $global:LogPathName = ""
 $global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
-$global:Version = "0.0.1"
+$global:Version = "0.2"
 
 function Open-Log {
     
@@ -241,8 +241,10 @@ function Get-ConvenientFileSize
 function New-PeterReconcile
 {
 Param( 
-    [Parameter(Mandatory)][String] $SourceFolder,
-    [Parameter(Mandatory)][String] $ReconcileFile,
+    [Parameter(Mandatory)]
+    [String] $SourceFolder,
+    [Parameter(Mandatory)]
+    [String] $ReconcileFile,
     [String] $RootFolder,
     [String] $FileFilter,
     [int] $ProcessFileCount,
@@ -275,7 +277,10 @@ Param(
 
     if ($ReconcileFile -eq "")
     {
-        $ReconcileFile = $default_reconcileFile
+        if (!(Test-Path -Path $global:MetadataPathName )) {
+            $null = New-Item -Path $global:MetadataPathName -ItemType Directory
+        }
+        $ReconcileFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_reconcileFile
     }
 
     if ($SourceFolder.StartsWith("@")) {
@@ -298,10 +303,11 @@ Param(
     Write-Host "Generating reconciliation file '$ReconcileFile'"
 
     if ($IncludeExif) {
-        if (!(Test-Path -Path $global:MetadataPathName )) {
-            $null = New-Item -Path $global:MetadataPathName -ItemType Directory
+        $dirPath = Split-Path -Path $ReconcileFile -Parent
+        if (!(Test-Path -Path $dirpath )) {
+            $null = New-Item -Path $dirpath -ItemType Directory
         }
-        $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_exifFile
+        $ExifFile = Join-Path -Path $dirpath -ChildPath $global:default_exifFile
         Write-Log "Generating Exif file '$ExifFile'"
         Set-Content  -Encoding utf8  -Path $ExifFile  -Value $(Set-ExifCsvHeader)
     }
@@ -361,7 +367,9 @@ Param(
 
                         if ($IncludeExif) {
                             $exifData = Get-ImageFileExif -ImageFile $($_.FullName)
-                            Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData)
+                            if ($null -ne $exifData) {
+                                Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData)
+                            }
                         }
                     
                     }
@@ -397,7 +405,9 @@ Param(
 
             if ($IncludeExif) {
                 $exifData = Get-ImageFileExif -ImageFile $($_.FullName)
-                Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData )
+                if ($null -ne $exifData) {
+                    Add-Content -Path $ExifFile  -Value (Set-ExifCsvRecord -ExifData $exifData )
+                }
             }
 
         }
@@ -566,6 +576,7 @@ function Invoke-SinglePack
 
   The following environment variables are supported:
   - PETERDOCS_RECIPIENTKEY
+  - PETERDOCS_SECRETKEY
   - PETERDOCS_LOGPATH
 
  .Example
@@ -638,6 +649,13 @@ Param(
         $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEY"
         if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
             $RecipientKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        }
+    }
+
+    if ($SecretKey -eq "") {
+        $getEnvName = $(Get-SoftwareName) + "_SECRETKEY"
+        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+            $SecretKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
         }
     }
 
@@ -775,6 +793,12 @@ Param(
         $null = $items.Add($dataItem)
     }
 
+    $dataItem = @{"SecretFile"="$SecretFile";"Caption"="File used for complex password storage with asymmetric key";}
+    $null = $items.Add($dataItem)
+
+    $dataItem = @{"FileFilter"="$FileFilter";"Caption"="File filter used with Compress";}
+    $null = $items.Add($dataItem)
+
     $jsonData.Add("Links",$items)
     $jsonData | ConvertTo-Json -Depth 10 | Out-File $jsonFile
 
@@ -782,7 +806,7 @@ Param(
     $fullMetadatName = (Get-Item $global:MetadataPathName).FullName
     $fullZipName = (Get-Item $ArchiveFile).FullName
     Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames
-#    Remove-Item $fullMetadatName -Recurse
+    Remove-Item $fullMetadatName -Recurse
 
     Write-Log "Archive file '$ArchiveFile' created from folder '$SourceFolder'"
     Write-Host "Archive file '$ArchiveFile' created from folder '$SourceFolder'"  -ForegroundColor Green
@@ -869,7 +893,8 @@ Param(
   is not accessible and you want to reconcile, then this tool is appropriate. 
 
   The following environment variables are supported:
-  - PETERDOCS_RECIPIENTKEY
+  - PETERDOCS_PROFILE
+  - PETERDOCS_ACCOUNTKEY
   - PETERDOCS_LOGPATH
 
  .Example
@@ -1385,6 +1410,7 @@ Param(
 
   The following environment variables are supported:
   - PETERDOCS_RECIPIENTKEY
+  - PETERDOCS_SECRETKEY
   - PETERDOCS_LOGPATH
 
  
@@ -1444,6 +1470,13 @@ Param(
         $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEY"
         if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
             $RecipientKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        }
+    }
+
+    if ($SecretKey -eq "") {
+        $getEnvName = $(Get-SoftwareName) + "_SECRETKEY"
+        if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+            $SecretKey = [System.Environment]::GetEnvironmentVariable($getEnvName)
         }
     }
 
@@ -1576,8 +1609,8 @@ Param(
 
     # Check for metadata
     $jsonFile = Join-Path -Path (Join-Path -Path $RestoreFolder -ChildPath $global:MetadataPathName ) -ChildPath $global:default_metaFile
-    Write-Host "Checking $jsonFile"
-    if (Test-FilesExist $jsonFile) {
+    Write-Host "Checking for $jsonFile"
+    if (Test-Path -Path $jsonFile -PathType Leaf ) {
         $jsonData = Get-Content -Raw -Path $jsonFile | ConvertFrom-Json
 
         $software = $jsonData.Software.Name
@@ -1607,6 +1640,7 @@ Param(
             }
         }
     }
+
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconciliation file '$ReconcileFile' does not exist"
         Write-Host "Reconciliation file '$ReconcileFile' does not exist" -ForegroundColor Red
@@ -1619,12 +1653,19 @@ Param(
 
     Write-Log "Using reconciliation file '$ReconcileFile'"
     
+    Write-Progress -Activity "Comparing reconciliation entries in file $ReconcileFile" -Status "Start" 
+
     $totalFileCount = 0
     $totalFileSize = 0
     $errorCount = 0
     $errorCreateCount = 0
     $missingFileCount = 0
     $missingHash = $false
+
+    $ProcessFileCount = 0
+    Import-Csv $ReconcileFile | ForEach-Object {
+        $ProcessFileCount += 1
+    }
 
     Import-Csv $ReconcileFile | ForEach-Object {
         $totalFileCount = $totalFileCount +1 
@@ -1696,7 +1737,15 @@ Param(
             $errorCount = $errorCount + 1
             Write-Log "Non existant target file '$restoreFileName'"
         }
+
+        if ( $ProcessFileCount -gt 0) {
+            Write-Progress -Activity "Comparing reconciliation entries in file $ReconcileFile" -Status "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$restoreFileName'" -PercentComplete (($totalFileCount / $ProcessFileCount) * 100) 
+        } else {
+            Write-Progress -Activity "Comparing reconciliation entries in file $ReconcileFile" -Status "Read $totalFileCount files and size $(Get-ConvenientFileSize -Size $totalFileSize ).  Currently at folder '$restoreFileName'" -PercentComplete -1
+        }
     }
+    
+    Write-Progress -Activity "Comparing reconciliation entries in file $ReconcileFile" -Completed
 
     Write-Log "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize ) ($totalFileSize)"
     Write-Host "Total file storage size is $(Get-ConvenientFileSize -Size $totalFileSize )"

@@ -13,6 +13,8 @@ transfer the archive file to your target, where the content are unpacked using t
 key. After archive contents are restored you can execute the reconcile function
 to veriy that the contents are transferred, unaltered.
 
+See [Quick Start](QuickStart.md) if you are ready to start and don't need the details.
+
 If you have access to both source and target folders, then you should consider
 using tools such as:
 
@@ -37,7 +39,7 @@ folders and can be large in number and size because of the increased
 resolution of digital cameras.
 
 The backup also required to be secure from accidental distribution.  The backup is not secured
-from accidental or malicious deletion, which are require different controls.
+from accidental or malicious deletion, which require different controls.
 
 ## Usage
 
@@ -56,7 +58,7 @@ Expand-Peter -RestoreFolder "c:\backup\pictures" -Secret "c0mpleX%S3cret" -Archi
 Compare-Peter -RestoreFolder "c:\backup\pictures"
 ```
 
-The above commands are using the default settings for certain options
+The above commands are using the default settings for certain options.
 
 Packages source folder contents into a 7ZIP file, adding a reconciliation
 file to the 7ZIP file and then encrypting the contents.  Send

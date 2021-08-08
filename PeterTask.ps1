@@ -90,6 +90,9 @@
   uses a symmetric cryptographic key exchange which is less secure then the 
   RecipientKey approach.
 
+  SecretKey can also be specifed with Environment variable 
+  "PETERDOCS_SECRETKEY"
+
   Note: Currently the script does not user Secure Strings
 
  .Parameter ArchiveFile
@@ -165,6 +168,7 @@
 
   The following environment variables are supported:
   - PETERDOCS_RECIPIENTKEY
+  - PETERDOCS_SECRETKEY
   - PETERDOCS_PROFILE
   - PETERDOCS_ACCOUNTKEY
   - PETERDOCS_LOGPATH
@@ -270,7 +274,11 @@ Import-Module .\PeterDocs
 
     if ($task -eq "NewReconcile") {
         $actioned = $true
-        New-PeterReconcile -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath LogPath  -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
+        if ($null -eq $reconcileFile -or $reconcileFile -eq "") {
+          Write-Error "Reconcile file name required (-ReconcileFile)"
+          return
+        }
+        New-PeterReconcile -ReconcileFile $reconcileFile -SourceFolder $path -Feedback -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath  -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
     }
 
 
@@ -282,7 +290,7 @@ Import-Module .\PeterDocs
     if ($task -eq "ArchiveInformation") {
         $actioned = $true
         if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
-            Write-Host "Recipient Key or Secret Key required for 7Zip information"  -ForegroundColor Red
+            Write-Error "Recipient Key or Secret Key required for 7Zip information"
             return
         } 
         
