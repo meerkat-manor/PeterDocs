@@ -239,6 +239,8 @@ param (
 
     [Alias("Exif")]
     [switch] $IncludeExif,
+       
+    [String] $VolumeSize = "-1",
 
     [String] $LogPath = ""
 
@@ -250,7 +252,7 @@ Import-Module .\PeterDocs
 
     if ($task -eq "Compress") {
         $actioned = $true
-        Compress-Peter -SourceFolder $path -SecretKey $SecretKey  -SecretFile $SecretFile -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -LogPath $LogPath -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
+        Compress-Peter -SourceFolder $path -SecretKey $SecretKey  -SecretFile $SecretFile -RecipientKey $RecipientKey -ArchiveFile $archiveFile -ReconcileFile $reconcileFile -RootFolder $rootFolder -FileFilter $fileFilter -VolumeSize $VolumeSize -LogPath $LogPath -ExcludeHash:$ExcludeHash -IncludeExif:$IncludeExif
     }
 
 
@@ -268,7 +270,7 @@ Import-Module .\PeterDocs
 
     if ($task -eq "Expand") {
         $actioned = $true
-        Expand-Peter -RestoreFolder $path -SecretKey $secretKey -SecretFile $secretFile -ArchiveFile $ArchiveFile -LogPath $LogPath 
+        Expand-Peter -RestoreFolder $path -SecretKey $secretKey -SecretFile $secretFile  -RecipientKey $RecipientKey -ArchiveFile $ArchiveFile -LogPath $LogPath 
     }
 
 
@@ -298,6 +300,12 @@ Import-Module .\PeterDocs
             if ($SecretFile -eq "")
             {
                 $SecretFile = $ArchiveFileName + ".key"
+            }
+            if (!(Test-Path -Path $SecretFile)) {
+              Write-Log "Secret file '$SecretFile' not found" 
+              Write-Host "Secret file '$SecretFile' not found"  -ForegroundColor Red
+              Close-Log
+              return
             }
             $secret = Unprotect-CmsMessage -To $RecipientKey -Path $SecretFile
         } else {

@@ -31,9 +31,11 @@
 $global:default_reconcileFile = "##peter_files##.csv"
 $global:default_exifFile = "##peter_exif##.csv"
 $global:default_metaFile = "##peter##.json"
+$global:default_errorListFile = Join-Path -Path ".\" -ChildPath "##peter_error_list##.txt"
 $global:LogPathName = ""
 $global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
-$global:Version = "0.3"
+$global:Version = "0.31"
+
 
 function Open-Log {
     
@@ -144,15 +146,15 @@ function Get-ConvenientFileSize
     ) 
  
     
-    if ($totalFileSize -ge 1TB) {
+    if ($Size -ge 1TB) {
         $totalRightLabel = "TB"
         $totalFileXbytes = [math]::Round(($size / 1TB), 2)        
     } else {
-        if ($totalFileSize -ge 1GB) {
+        if ($Size -ge 1GB) {
             $totalRightLabel = "GB"
             $totalFileXbytes = [math]::Round(($size / 1GB), 2)        
         } else { 
-            if ($totalFileSize -ge 1MB) {
+            if ($Size -ge 1MB) {
                 $totalRightLabel = "MB"
                 $totalFileXbytes = [math]::Round(($size / 1MB), 2)        
             } else {
@@ -163,6 +165,60 @@ function Get-ConvenientFileSize
     }
 
     return $totalFileXbytes.ToString() + " " + $totalRightLabel
+}
+
+
+function Get-ReverseConvenientFileSize
+{
+    Param( 
+        [Parameter(Mandatory)]
+        [String] $Size
+    ) 
+
+    if ($null -eq $Size -or $size -eq "") {
+        return ""
+    }
+    
+    $found = $false
+    if ($size -like "*TB") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-2))) * 1TB
+    }
+    if ($size -like "*T") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-1))) * 1TB
+    }
+    if ($size -like "*GB") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-2))) * 1GB
+    }
+    if ($size -like "*G") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-1))) * 1GB
+    }
+    if ($size -like "*MB") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-2))) * 1MB
+    }
+    if ($size -like "*M") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-1))) * 1MB
+    }
+    if ($size -like "*KB") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-2))) * 1KB
+    }
+    if ($size -like "*K") {
+        $found = $true
+        $totalSize = [int]::Parse($size.Substring(0, ($size.Length-1))) * 1KB
+    }
+    if (!$found)
+    {
+        $found = $true
+        $totalSize = [int]::Parse($size)
+    } 
+
+    return $totalSize
 }
 
 
@@ -337,7 +393,7 @@ Param(
                     Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
                 }
                 else {
-                    Get-ChildItem $_ -Filter $FileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+                    Get-ChildItem $_ -Filter $FileFilter -Recurse -Force | Where-Object {!$_.PSIsContainer} | ForEach-Object {
 
                         $totalFilecount = $totalFileCount + 1
                         $totalFileSize = $totalFileSize + $_.Length 
@@ -376,7 +432,7 @@ Param(
         }
 
     } else {
-        Get-ChildItem $SourceFolder -Filter $FileFilter -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+        Get-ChildItem $SourceFolder -Filter $FileFilter -Recurse -Force| Where-Object {!$_.PSIsContainer} | ForEach-Object {
 
             $totalFilecount = $totalFileCount + 1
             $totalFileSize = $totalFileSize + $_.Length 
@@ -428,6 +484,9 @@ function Invoke-SinglePack
         [Parameter(Mandatory)][String] $ArchiveFolder,
         [Parameter(Mandatory)][String] $ArchiveFileName,
         [String] $FileFilter,
+        [String] $ZipFormat = "SevenZip",
+        [String] $CompressionLevel = "Normal",
+        [String] $VolumeSize = "-1",
         [Boolean] $FirstCompress
     ) 
 
@@ -438,9 +497,9 @@ function Invoke-SinglePack
     if (Test-FilesExist -FolderName $ArchiveFolder -FileFilter $FileFilter) {
         try {
             if ($FirstCompress) {
-                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFileName -Format SevenZip -PreserveDirectoryRoot -Filter $FileFilter   
+                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFileName -Format $ZipFormat -CompressionLevel $7zipLevel -PreserveDirectoryRoot -Filter $FileFilter -Volume (Get-ReverseConvenientFileSize $VolumeSize) 
             } else {
-                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFileName -Format SevenZip -PreserveDirectoryRoot -Filter $FileFilter -Append    
+                Compress-7Zip -Path $ArchiveFolder -ArchiveFileName $ArchiveFileName -Format $ZipFormat -CompressionLevel $7zipLevel -PreserveDirectoryRoot -Filter $FileFilter -Volume (Get-ReverseConvenientFileSize $VolumeSize) -Append    
             }
             $FirstCompress = $false
         } catch {
@@ -575,7 +634,21 @@ function Invoke-SinglePack
   The following environment variables are supported:
   - PETERDOCS_RECIPIENTKEY
   - PETERDOCS_SECRETKEY
+  - PETERDOCS_7ZIPLEVEL
+  - PETERDOCS_ZIPFORMAT
   - PETERDOCS_LOGPATH
+
+  The environment variable _PETERDOCS_7ZIPLEVEL_ is used to override the default
+  7ZIP compression level setting.  This is useful if you already for example when 
+  you know that the binary files are compressed or have no benefit in compression
+  saving time. For example
+
+  ```PETERDOCS_7ZIPLEVEL=None```
+
+  The environment variable PETERDOCS_ZIPFORMAT is used to override the default
+  7ZIP format value.  Using this option may invalidate other settings. For example
+
+  ```PETERDOCS_ZIPFORMAT=SevenZip```
 
  .Example
    # Pack and encrypt all files in folder ".\transferpack\" using a private-public key
@@ -598,6 +671,7 @@ Param(
     [switch] $ExcludeHash,
     [switch] $IncludeExif,
     [String] $RootFolder,
+    [String] $VolumeSize = "-1",
     [String] $LogPath
 
 ) 
@@ -623,6 +697,7 @@ Param(
     Write-Log "Parameter: SecretFile   Value: $SecretFile "
     Write-Log "Parameter: ExcludeHash   Value: $ExcludeHash "
     Write-Log "Parameter: IncludeExif   Value: $IncludeExif "
+    Write-Log "Parameter: VolumeSize   Value: $VolumeSize "
     Write-Log "Parameter: LogPath   Value: $LogPath "
     Write-Log ""
 
@@ -642,6 +717,17 @@ Param(
         }
     }
 
+    if ($null -ne $env:PETERDOCS_7ZIPLEVEL -and $env:PETERDOCS_7ZIPLEVEL -ne "") {
+        $7zipLevel = $env:PETERDOCS_7ZIPLEVEL
+    } else {
+        $7zipLevel = "Normal"
+    }
+
+    if ($null -ne $env:PETERDOCS_ZIPFORMAT -and $env:PETERDOCS_ZIPFORMAT -ne "") {
+        $7zipFormat = $env:PETERDOCS_ZIPFORMAT
+    } else {
+        $7zipFormat= "SevenZip"
+    }
 
     if ($RecipientKey -eq "") {
         $getEnvName = $(Get-SoftwareName) + "_RECIPIENTKEY"
@@ -684,6 +770,12 @@ Param(
         {
             $SecretFile = $ArchiveFile + ".key"
         }
+        if (!(Test-Path -Path $SecretFile)) {
+            Write-Log "Secret file '$SecretFile' not found" 
+            Write-Host "Secret file '$SecretFile' not found"  -ForegroundColor Red
+            Close-Log
+            return
+        }
         $secret = New-RandomPassword -Length 80
         Protect-CmsMessage -To $recipientKey -OutFile $SecretFile -Content $secret 
     } else {
@@ -718,7 +810,7 @@ Param(
         Write-Log "Archive primary folder is '$SourceFolder'"
         $firstCompress = $true
         Get-ChildItem $SourceFolder| ForEach-Object {
-            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
+            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -ZipFormat $7zipFormat -FirstCompress $firstCompress  -CompressionLevel $7zipLevel
         }
     } else {
         if ($SourceFolder.StartsWith("@")) {
@@ -731,7 +823,7 @@ Param(
 
                     if ($_.EndsWith("*")) {
                         Get-ChildItem $_ | ForEach-Object {
-                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -ZipFormat $7zipFormat -FirstCompress $firstCompress -CompressionLevel $7zipLevel
                         }
                     } else {
                 
@@ -740,7 +832,7 @@ Param(
                             Write-Host "Folder/file '$($_)' does not exist" -ForegroundColor Red
                         }
                         else {
-                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_ -ArchiveFile $ArchiveFile -FileFilter $FileFilter -FirstCompress $firstCompress
+                            $firstCompress = Invoke-SinglePack -ArchiveFolder $_ -ArchiveFile $ArchiveFile -FileFilter $FileFilter -ZipFormat $7zipFormat -FirstCompress $firstCompress  -CompressionLevel $7zipLevel
                         }
                     }
                 }
@@ -748,20 +840,33 @@ Param(
         } else {
             Write-Log "Archive folder '$SourceFolder'"
             Write-Host "Archive folder '$SourceFolder'"
-            Compress-7Zip -Path $SourceFolder -ArchiveFileName $ArchiveFile -Format SevenZip -Filter $FileFilter    
+            Compress-7Zip -Path $SourceFolder -ArchiveFileName $ArchiveFile  -Format $7zipFormat -CompressionLevel $7zipLevel -Filter $FileFilter -Volume (Get-ReverseConvenientFileSize $VolumeSize)
         }
     }
 
+    $multiVolume = $false
     If (!(Test-Path -Path $ArchiveFile )) {    
-        Write-Log "Archive file '$ArchiveFile' was not created.  See any previous errors"
-        Write-Host "Archive file '$ArchiveFile' was not created.  See any previous errors" -ForegroundColor Red
-        Close-Log
-        Exit
+        # Check for volume 
+        If (!(Test-Path -Path $($ArchiveFile+".001") )) {    
+            Write-Log "Archive file '$ArchiveFile' was not created.  See any previous errors"
+            Write-Host "Archive file '$ArchiveFile' was not created.  See any previous errors" -ForegroundColor Red
+            Close-Log
+            Exit
+        } else {
+            $multiVolume = $true
+            Write-Log "Multi volume archive file '$ArchiveFile' created."
+            Write-Host "Multi volume archive file '$ArchiveFile' created."
+        }
     }
 
-    
-    $archiveInfo = Get-7ZipInformation -ArchiveFileName $ArchiveFile
-    [int] $archiveFileCount = $archiveInfo.FilesCount
+    if ($multiVolume) {
+        $fullZipName = (Get-Item $($ArchiveFile+".001")).FullName
+        $archiveInfo = Get-7ZipInformation -ArchiveFileName $fullZipName
+        [long] $archiveFileCount = $archiveInfo.FilesCount
+    } else {
+        $archiveInfo = Get-7ZipInformation -ArchiveFileName $ArchiveFile
+        [long] $archiveFileCount = $archiveInfo.FilesCount
+    }
 
     New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash:$ExcludeHash -ProcessFileCount $archiveFileCount -IncludeExif:$IncludeExif
     If (!(Test-Path -Path $ReconcileFile )) {    
@@ -802,9 +907,18 @@ Param(
 
     Write-Log "Add folder '$global:MetadataPathName' to file '$ArchiveFile'"
     $fullMetadatName = (Get-Item $global:MetadataPathName).FullName
-    $fullZipName = (Get-Item $ArchiveFile).FullName
-    Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames
-    Remove-Item $fullMetadatName -Recurse
+    if ($multiVolume) {
+        $fext = (Get-ChildItem $ArchiveFile).Extension
+        $fname = [System.IO.Path]::GetFileNameWithoutExtension($ArchiveFile)
+        $fullZipName = (Get-Item $($fname+"_meta"+$fext)).FullName
+        Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames
+        # TODO: Change for volumes
+        # -Volume (Get-ReverseConvenientFileSize $VolumeSize)
+    } else {
+        $fullZipName = (Get-Item $ArchiveFile).FullName
+        Compress-7Zip -Path $fullMetadatName -ArchiveFileName $fullZipName -PreserveDirectoryRoot -Format SevenZip -Append -Password $secret -EncryptFilenames -Volume (Get-ReverseConvenientFileSize $VolumeSize)
+        Remove-Item $fullMetadatName -Recurse
+    }
 
     Write-Log "Archive file '$ArchiveFile' created from folder '$SourceFolder'"
     Write-Host "Archive file '$ArchiveFile' created from folder '$SourceFolder'"  -ForegroundColor Green
@@ -1490,14 +1604,12 @@ Param(
         {
             $SecretFile = $ArchiveFile + ".key"
         }
-    
         If (!(Test-Path -Path $SecretFile )) {    
             Write-Log "Secret file '$SecretFile' does not exist"
             Write-Host "Secret file '$SecretFile' does not exist" -ForegroundColor Red
             Close-Log
             return
-        }
-    
+        }    
         $secret = Unprotect-CmsMessage -To $RecipientKey -Path $SecretFile
     } else {
         $secret = $SecretKey
@@ -1667,6 +1779,7 @@ Param(
 
     Import-Csv $ReconcileFile | ForEach-Object {
         $totalFileCount = $totalFileCount +1 
+        $errorFileLogged = $false
         if ($RootFolder -ne "") {
             $adjustedName = $_.FullName.Replace($RootFolder, "\")
             $restoreFileName = $(Join-Path -Path $RestoreFolder -ChildPath $adjustedName)    
@@ -1680,6 +1793,15 @@ Param(
                     if ($_.Hash -ne $targetHash) {
                         $errorCount = $errorCount + 1
                         Write-Log "Hash mismatch for file '$restoreFileName' with target value $targetHash"
+                                    
+                        if (!$errorFileLogged) {
+                            if (!(Test-Path -Path $global:default_errorListFile)) {
+                                $null = New-Item -Path $global:default_errorListFile -ItemType File
+                            }
+                            Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                            $errorFileLogged = $true
+                        }
+
                     }
                 } else {
                     $missingHash = $true
@@ -1697,10 +1819,27 @@ Param(
                 if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
                     $errorCount = $errorCount + 1
                 }
+                                    
+                if (!$errorFileLogged) {
+                    if (!(Test-Path -Path $global:default_errorListFile)) {
+                        $null = New-Item -Path $global:default_errorListFile -ItemType File
+                    }
+                    Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                    $errorFileLogged = $true
+                }
             }
             if ((Get-Item -Path $restoreFileName).Length -ne $_.Length) {
                 $errorCount = $errorCount + 1
                 Write-Log "Length mismatch for file '$restoreFileName' with target value $(Get-Item -Path $restoreFileName).Length) expected $($_.Length)"
+                                    
+                if (!$errorFileLogged) {
+                    if (!(Test-Path -Path $global:default_errorListFile)) {
+                        $null = New-Item -Path $global:default_errorListFile -ItemType File
+                    }
+                    Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                    $errorFileLogged = $true
+                }
+
             }
 
             # Note that last / write access time is not checked by default as it will commonly be changed after restore
@@ -1717,15 +1856,42 @@ Param(
                     if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
                         $errorCount = $errorCount + 1
                     }
+                                    
+                    if (!$errorFileLogged) {
+                        if (!(Test-Path -Path $global:default_errorListFile)) {
+                            $null = New-Item -Path $global:default_errorListFile -ItemType File
+                        }
+                        Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                        $errorFileLogged = $true
+                    }
+
                 }
     
                 if ((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastAccessTime) {
                     $errorCount = $errorCount + 1
                     Write-Log "Last access mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                                    
+                    if (!$errorFileLogged) {
+                        if (!(Test-Path -Path $global:default_errorListFile)) {
+                            $null = New-Item -Path $global:default_errorListFile -ItemType File
+                        }
+                        Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                        $errorFileLogged = $true
+                    }
+
                 }
                 if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
                     $errorCount = $errorCount + 1
                     Write-Log "Last write mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                                    
+                    if (!$errorFileLogged) {
+                        if (!(Test-Path -Path $global:default_errorListFile)) {
+                            $null = New-Item -Path $global:default_errorListFile -ItemType File
+                        }
+                        Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                        $errorFileLogged = $true
+                    }
+
                 }
             }
 
@@ -1734,6 +1900,15 @@ Param(
             $missingFileCount = $missingFileCount + 1
             $errorCount = $errorCount + 1
             Write-Log "Non existant target file '$restoreFileName'"
+                                    
+            if (!$errorFileLogged) {
+                if (!(Test-Path -Path $global:default_errorListFile)) {
+                    $null = New-Item -Path $global:default_errorListFile -ItemType File
+                }
+                Add-Content -Path $global:default_errorListFile -Value "$restoreFileName"
+                $errorFileLogged = $true
+            }
+            
         }
 
         if ( $ProcessFileCount -gt 0) {
