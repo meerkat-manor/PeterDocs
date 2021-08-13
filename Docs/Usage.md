@@ -30,7 +30,7 @@ Expand-Peter
 New-PeterReconcile
     -SourceFolder <string>    
     -ReconcileFile <string>
-    [-RootFolder <string>}
+    [-RootFolder <string>]
     [-FileFilter <string>]
     [-ProcessFileCount <long>]
     [-ExcludeHash]
@@ -52,7 +52,7 @@ Compare-Peter
 
 ## Usage PeterTask
 
-For using the PeterTask, syntax is simple as shown below. Behind the scenes the
+For using the PeterTask, syntax is as simple as shown below. Behind the scenes the
 PeterTask calls the functions above:
 
 ```powershell
@@ -69,8 +69,10 @@ PeterTask
     [-CloudProfile <string>]
     [-ExcludeHash]
     [-IncludeExif]
-    [-VolumeSize <string>]
     [-LogPath <string>]
     [<CommonParameters>]
 
 ```
+
+**NOTE** Please do not use the VolumeSize parameter as it will fail due to a current
+issue with the underlying 7zip4 Powershell module.

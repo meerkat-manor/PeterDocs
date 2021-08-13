@@ -46,10 +46,7 @@ function Open-Log {
 
 }
 
-function Write-Log {
-    param(
-        [String] $LogEntry
-    )
+function Get-LogName {
 
     $date = Get-Date -f "yyyy-MM-dd"
     
@@ -57,12 +54,22 @@ function Write-Log {
     {
         $global:LogPathName = Join-Path -Path ".\" -ChildPath "Logs"
     }
-    $logName = $(Get-SoftwareName) + "_$date.log"
-    $sFullPath = Join-Path -Path $global:LogPathName -ChildPath $logName 
 
     if (!(Test-Path -Path $global:LogPathName)) {
         $null = New-Item -Path $global:LogPathName -ItemType Directory
     }
+
+    $logName = $(Get-SoftwareName) + "_$date.log"
+
+    return Join-Path -Path $global:LogPathName -ChildPath $logName 
+}
+
+function Write-Log {
+    param(
+        [String] $LogEntry
+    )
+
+    $sFullPath = Get-LogName 
 
     if (!(Test-Path -Path $sFullPath)) {
         Write-Host "Log path: $sFullPath"
@@ -340,16 +347,14 @@ Param(
     if ($SourceFolder.StartsWith("@")) {
         If (!(Test-Path -Path $SourceFolder.Substring(1) )) {    
             Write-Log "File '$($SourceFolder.Substring(1))' does not exist"
-            Write-Host "File '$($SourceFolder.Substring(1))' does not exist" -ForegroundColor Red
             Close-Log
-            Exit
+            Throw "File '$($SourceFolder.Substring(1))' does not exist"
         }
     } else {
         If (!(Test-Path -Path $SourceFolder )) {    
             Write-Log "Folder '$SourceFolder' does not exist"
-            Write-Host "Folder '$SourceFolder' does not exist" -ForegroundColor Red
             Close-Log
-            Exit
+            Throw "Folder '$SourceFolder' does not exist"
         }
     }
 
@@ -504,7 +509,7 @@ function Invoke-SinglePack
             $FirstCompress = $false
         } catch {
             Write-Log "Compress error with folder/file '$ArchiveFolder'.  See any previous errors.  $Error"
-            Write-Host "Compress error with folder/file '$ArchiveFolder'.  See any previous errors.  $Error" -ForegroundColor Red
+            Throw "Compress error with folder/file '$ArchiveFolder'. Please refer to log '$(Get-LogName)' for details" 
         }
     } else {
         Write-Log "Empty folder/file '$ArchiveFolder'"
@@ -704,16 +709,14 @@ Param(
     if ($SourceFolder.StartsWith("@")) {
         If (!(Test-Path -Path $SourceFolder.Substring(1) )) {    
             Write-Log "File '$($SourceFolder.Substring(1))' does not exist"
-            Write-Host "File '$($SourceFolder.Substring(1))' does not exist" -ForegroundColor Red
             Close-Log
-            Exit
+            Throw "File '$($SourceFolder.Substring(1))' does not exist"
         }
     } else {
         If (!(Test-Path -Path $SourceFolder )) {    
             Write-Log "Folder '$SourceFolder' does not exist"
-            Write-Host "Folder '$SourceFolder' does not exist" -ForegroundColor Red
             Close-Log
-            Exit
+            Throw "Folder '$SourceFolder' does not exist"
         }
     }
 
@@ -745,17 +748,15 @@ Param(
 
     if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
         Write-Log "Recipient Key or Secret Key required for packing" 
-        Write-Host "Recipient Key or Secret Key required for packing"  -ForegroundColor Red
         Close-Log
-        return
+        Throw "Recipient Key or Secret Key required for packing"
     } 
     
     if ($RootFolder -eq "") {
         if ($SourceFolder.EndsWith("*")) {
             Write-Log "Root folder required for packing when using wild card for Source Folder" 
-            Write-Host "Root folder required for packing when using wild card for Source Folder"  -ForegroundColor Red
             Close-Log
-            return
+            Throw "Root folder required for packing when using wild card for Source Folder"
         } else {
             $RootFolder = $SourceFolder
         }
@@ -772,18 +773,16 @@ Param(
         }
         if (!(Test-Path -Path $SecretFile)) {
             Write-Log "Secret file '$SecretFile' not found" 
-            Write-Host "Secret file '$SecretFile' not found"  -ForegroundColor Red
             Close-Log
-            return
+            Throw "Secret file '$SecretFile' not found"
         }
         $secret = New-RandomPassword -Length 80
         Protect-CmsMessage -To $recipientKey -OutFile $SecretFile -Content $secret 
     } else {
         if (!(Test-PasswordQuality -TestPassword $SecretKey)) {
             Write-Log "Secret Key does not meet complexity rules" 
-            Write-Host "Secret Key does not meet complexity rules"  -ForegroundColor Red
             Close-Log
-            return    
+            Throw "Secret Key does not meet complexity rules"
         }
         $secret = $SecretKey
     }
@@ -849,9 +848,8 @@ Param(
         # Check for volume 
         If (!(Test-Path -Path $($ArchiveFile+".001") )) {    
             Write-Log "Archive file '$ArchiveFile' was not created.  See any previous errors"
-            Write-Host "Archive file '$ArchiveFile' was not created.  See any previous errors" -ForegroundColor Red
             Close-Log
-            Exit
+            Throw "Archive file '$ArchiveFile' was not created. Please refer to log '$(Get-LogName)' for details"
         } else {
             $multiVolume = $true
             Write-Log "Multi volume archive file '$ArchiveFile' created."
@@ -871,9 +869,8 @@ Param(
     New-PeterReconcile -ReconcileFile $ReconcileFile -SourceFolder $SourceFolder -FileFilter $FileFilter -RootFolder $rootFolder -ExcludeHash:$ExcludeHash -ProcessFileCount $archiveFileCount -IncludeExif:$IncludeExif
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconcile file '$ReconcileFile' was not created.  See any previous errors"
-        Write-Host "Reconcile file '$ReconcileFile' was not created.  See any previous errors" -ForegroundColor Red
         Close-Log
-        return
+        Throw "Reconcile file '$ReconcileFile' was not created.  Please refer to log '$(Get-LogName)' for details"
     }
 
     # Write Json file as links
@@ -1057,9 +1054,8 @@ Param(
 
     if (!(Test-Path -Path $ArchiveFile )) {
         Write-Log "Archive file '$ArchiveFile' not found"
-        Write-Host "Archive file '$ArchiveFile' not found"  -ForegroundColor Red
         Close-Log
-        return
+        Throw "Archive file '$ArchiveFile' not found"
     }
     if ($SecretFile -eq "") {
         $SecretFile = $ArchiveFile + ".key"
@@ -1077,9 +1073,8 @@ Param(
 
         if ($bucketHost -eq "") {
             Write-Log "Bucket name required" 
-            Write-Host "Bucket name required"  -ForegroundColor Red
             Close-Log
-            return
+            Throw "Bucket name required"
         }
 
         Try {
@@ -1100,7 +1095,8 @@ Param(
             Write-Host "Archive file '$ArchiveFile' stored on AWS S3 bucket '$bucketHost' at '$targetObject'" -ForegroundColor Green
         } Catch {
             Write-Log "Error in sending archive file '$ArchiveFile' to AWS S3 with error: $($_)"
-            Write-Host "Error in sending archive file '$ArchiveFile' to AWS S3 with error: $($_)" -ForegroundColor Red
+            Close-Log
+            Throw "Error in sending archive file '$ArchiveFile' to AWS S3 with error: $($_)"
         }
     }
 
@@ -1125,9 +1121,8 @@ Param(
             } 
             if ($null -eq $accountKey -or $accountKey -eq "") {
                 Write-Log "Account key required" 
-                Write-Host "Account key required"  -ForegroundColor Red
                 Close-Log
-                return
+                Throw "Account key required"
             }
         }
 
@@ -1137,25 +1132,22 @@ Param(
             $b2ApiToken = Get-B2ApiToken -AccountId $AccountId -AccountKey $AccountKey
         } Catch {
             Write-Log "Authentication error with account '$AccountID'" 
-            Write-Host "Authentication error with account '$AccountID'" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Authentication error with account '$AccountID'"
         }
 
         if ($null -eq $b2ApiToken.Token -or $b2ApiToken.Token -eq "")
         {
             Write-Log "Authentication error with account '$AccountID' as no API Token" 
-            Write-Host "Authentication error with account '$AccountID' as no API Token" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Authentication error with account '$AccountID' as no API Token"
         }
         
         $b2Bucket = Get-B2Bucket -ApiToken $b2ApiToken.Token -AccountId $b2ApiToken.accountId -ApiUri $b2ApiToken.ApiUri -BucketHost $bucketHost
         if ($null -eq $b2Bucket -or $b2Bucket.BucketID -eq "") {
             Write-Log "Bucket '$bucketHost' not found" 
-            Write-Host "Bucket '$bucketHost' not found" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Bucket '$bucketHost' not found"
         }
 
         $b2UploadUri = Get-B2UploadUri -BucketHost $b2Bucket.bucketId -FileName $ArchiveFile -ApiUri $b2ApiToken.ApiUri -ApiToken $b2ApiToken.Token 
@@ -1179,7 +1171,6 @@ Param(
 
     if (!($remoteType)) {
         Write-Log "Unknown remote path '$TargetPath.'.  No transfer performed" 
-        Write-Host "Unknown remote path '$TargetPath.'.  No transfer performed"  -ForegroundColor Red
         Write-Host "Recognised transfer prefixes: "
         Write-Host "    s3://         : Send to AWS S3 location"
         Write-Host "    b3://         : Send to Backblaze location"
@@ -1187,6 +1178,8 @@ Param(
         Write-Host "If you are saving to local drives or network shared folders,"    
         Write-Host "please use your OS tools to move the file"    
         Write-Host " "    
+        Close-Log
+        Throw "Unknown remote path '$TargetPath.'.  No transfer performed"
     }
 
     Close-Log
@@ -1340,7 +1333,8 @@ Param(
         $null = Read-S3Object -BucketName $bucketHost -File $ArchiveFile -Key $sourceObject
         if (!(Test-Path -Path $ArchiveFile)) {
             Write-Log "Archive file '$sourceObject' not found." 
-            Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
+            Close-Log
+            Throw "Archive file '$sourceObject' not found." 
         } else {
             $sourceObject = $SourcePath.Substring($offset) + ".key"
             $secretFile = $ArchiveFile + ".key"
@@ -1379,9 +1373,8 @@ Param(
             } 
             if ($null -eq $AccountKey -or $AccountKey -eq "") {
                 Write-Log "Account key required" 
-                Write-Host "Account key required"  -ForegroundColor Red
                 Close-Log
-                return
+                Throw "Account key required"
             }
         }
 
@@ -1389,25 +1382,22 @@ Param(
             $b2ApiToken = Get-B2ApiToken -AccountId $AccountId -AccountKey $AccountKey
         } Catch {
             Write-Log "Authentication error with account '$AccountID'" 
-            Write-Host "Authentication error with account '$AccountID'" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Authentication error with account '$AccountID'"
         }
 
         if ($null -eq $b2ApiToken.Token -or $b2ApiToken.Token -eq "")
         {
             Write-Log "Authentication error with account '$AccountID' as no API Token" 
-            Write-Host "Authentication error with account '$AccountID' as no API Token" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Authentication error with account '$AccountID' as no API Token"
         }
 
         $b2Bucket = Get-B2Bucket -ApiToken $b2ApiToken.Token -AccountId $b2ApiToken.accountId -ApiUri $b2ApiToken.ApiUri -BucketHost $bucketHost
         if ($null -eq $b2Bucket -or $b2Bucket.BucketID -eq "") {
             Write-Log "Bucket '$bucketHost' not found" 
-            Write-Host "Bucket '$bucketHost' not found" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Bucket '$bucketHost' not found"
         }
 
         $sourceObject = $SourcePath.Substring($offset)
@@ -1416,7 +1406,8 @@ Param(
         Receive-B2Download -BucketHost $bucketHost -SourcePath $sourceObject -FileName $ArchiveFile -ApiDownloadUri $b2ApiToken.DownloadUri -ApiToken $b2ApiToken.Token
         if (!(Test-Path -Path $ArchiveFile)) {
             Write-Log "Archive file '$sourceObject' not found." 
-            Write-Host "Archive file '$sourceObject' not found."  -ForegroundColor Red
+            Close-Log
+            Throw "Archive file '$sourceObject' not found."
         } else {
             $sourceObject = $SourcePath.Substring($offset) + ".key"
             $secretFile = $ArchiveFile + ".key"
@@ -1437,7 +1428,6 @@ Param(
 
     if (!($remoteType)) {
         Write-Log "Unknown remote path '$SourcePath'.  No get performed" 
-        Write-Host "Unknown remote path '$SourcePath'.  No get performed"  -ForegroundColor Red
         Write-Host "Recognised transfer prefixes: "
         Write-Host "    s3://bucket/path/path     : Fetch from AWS S3 location"
         Write-Host "    b2://bucket/path/path     : Fetch from Backblaze location"
@@ -1445,6 +1435,8 @@ Param(
         Write-Host "If you are fetching from local drives or network shared folders,"    
         Write-Host "please use your OS tools to move the file"    
         Write-Host " "    
+        Close-Log
+        Throw "Unknown remote path '$SourcePath'.  No get performed"
     }
 
     Close-Log
@@ -1573,9 +1565,8 @@ Param(
     
     If (!(Test-Path -Path $ArchiveFile )) {    
         Write-Log "Archive file '$ArchiveFile' does not exist"
-        Write-Host "Archive file '$ArchiveFile' does not exist" -ForegroundColor Red
         Close-Log
-        return
+        Throw "Archive file '$ArchiveFile' does not exist"
     }
 
     if ($RecipientKey -eq "") {
@@ -1594,9 +1585,8 @@ Param(
 
     if (($RecipientKey -eq "") -and ($SecretKey -eq "")) {
         Write-Log "Recipient Key name or Secret Key required for unpacking" 
-        Write-Host "Recipient Key name or Secret Key required for unpacking" -ForegroundColor Red
         Close-Log
-        return
+        Throw "Recipient Key name or Secret Key required for unpacking"
     } 
     
     if ($SecretKey -eq "") {
@@ -1606,9 +1596,8 @@ Param(
         }
         If (!(Test-Path -Path $SecretFile )) {    
             Write-Log "Secret file '$SecretFile' does not exist"
-            Write-Host "Secret file '$SecretFile' does not exist" -ForegroundColor Red
             Close-Log
-            return
+            Throw "Secret file '$SecretFile' does not exist"
         }    
         $secret = Unprotect-CmsMessage -To $RecipientKey -Path $SecretFile
     } else {
@@ -1711,9 +1700,8 @@ Param(
 
     If (!(Test-Path -Path $RestoreFolder )) {    
         Write-Log "Folder '$RestoreFolder' does not exist"
-        Write-Host "Folder '$RestoreFolder' does not exist"  -ForegroundColor Red
         Close-Log
-        return
+        Throw "Folder '$RestoreFolder' does not exist"
     }
 
 
@@ -1753,9 +1741,8 @@ Param(
 
     If (!(Test-Path -Path $ReconcileFile )) {    
         Write-Log "Reconciliation file '$ReconcileFile' does not exist"
-        Write-Host "Reconciliation file '$ReconcileFile' does not exist" -ForegroundColor Red
         Close-Log
-        return
+        Throw "Reconciliation file '$ReconcileFile' does not exist"
     }
 
     Write-Log "Reconciling documents transferred"
@@ -1932,21 +1919,28 @@ Param(
     Write-Log "Total file count is $totalFileCount with $errorCount errors"
     Write-Log "There are $missingFileCount missing files"
 
+    $errorDetected = $false
     if ($errorCreateCount -gt 0) {
+        $errorDetected = $true
         Write-Log "File create mismatch count is $errorCreateCount" 
         Write-Host "File create mismatch count is $errorCreateCount" -ForegroundColor Red
     }
 
     if ($errorCount -gt 0) {
+        $errorDetected = $true
         Write-Host "Total file count is $totalFileCount with $errorCount errors"  -ForegroundColor Red
     } else {
         Write-Host "Total file count is $totalFileCount with $errorCount errors"  -ForegroundColor Green
     }
     if ($missingFileCount -gt 0) {
+        $errorDetected = $true
         Write-Host "There are $missingFileCount missing files"  -ForegroundColor Red
     }
 
     Close-Log
+    if ($errorDetected) {
+        Throw "Compare mismatch error detected. Please refer to log '$(Get-LogName)' for details"
+    }
 }
 
 $getEnvName = $(Get-SoftwareName) + "_LOGPATH"
