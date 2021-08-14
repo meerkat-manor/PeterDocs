@@ -29,7 +29,6 @@
 #>
 
 $global:default_reconcileFile = "##peter_files##.csv"
-$global:default_exifFile = "##peter_exif##.csv"
 $global:default_metaFile = "##peter##.json"
 $global:default_errorListFile = Join-Path -Path ".\" -ChildPath "##peter_error_list##.txt"
 $global:LogPathName = ""
@@ -139,7 +138,7 @@ function Test-FilesExist
         [String] $FileFilter
     ) 
 
-    Get-ChildItem $folderName -Recurse | Where-Object {!$_.PSIsContainer} | ForEach-Object {
+    Get-ChildItem $folderName -Recurse -Force | Where-Object {!$_.PSIsContainer} | ForEach-Object {
         return $true
     }
     
@@ -366,7 +365,8 @@ Param(
         if (!(Test-Path -Path $dirpath )) {
             $null = New-Item -Path $dirpath -ItemType Directory
         }
-        $ExifFile = Join-Path -Path $dirpath -ChildPath $global:default_exifFile
+        $fname = [System.IO.Path]::GetFileNameWithoutExtension($ReconcileFile)
+        $ExifFile = Join-Path -Path $dirpath -ChildPath $($fname+"_exif.csv")
         Write-Log "Generating Exif file '$ExifFile'"
         Set-Content  -Encoding utf8  -Path $ExifFile  -Value $(Set-ExifCsvHeader)
     }
@@ -720,14 +720,18 @@ Param(
         }
     }
 
-    if ($null -ne $env:PETERDOCS_7ZIPLEVEL -and $env:PETERDOCS_7ZIPLEVEL -ne "") {
-        $7zipLevel = $env:PETERDOCS_7ZIPLEVEL
+    $getEnvName = $(Get-SoftwareName) + "_7ZIPLEVEL"
+    if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+        $7zipLevel = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        Write-Log "Compression level set to '$7zipLevel'"
     } else {
         $7zipLevel = "Normal"
     }
 
-    if ($null -ne $env:PETERDOCS_ZIPFORMAT -and $env:PETERDOCS_ZIPFORMAT -ne "") {
-        $7zipFormat = $env:PETERDOCS_ZIPFORMAT
+    $getEnvName = $(Get-SoftwareName) + "_ZIPFORMAT"
+    if ([System.Environment]::GetEnvironmentVariable($getEnvName) -ne "" -and $null -ne [System.Environment]::GetEnvironmentVariable($getEnvName)) {
+        $7zipFormat = [System.Environment]::GetEnvironmentVariable($getEnvName)
+        Write-Log "Compression format set to '$7zipFormat'"
     } else {
         $7zipFormat= "SevenZip"
     }
@@ -808,7 +812,7 @@ Param(
     {
         Write-Log "Archive primary folder is '$SourceFolder'"
         $firstCompress = $true
-        Get-ChildItem $SourceFolder| ForEach-Object {
+        Get-ChildItem $SourceFolder -Force | ForEach-Object {
             $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -ZipFormat $7zipFormat -FirstCompress $firstCompress  -CompressionLevel $7zipLevel
         }
     } else {
@@ -821,7 +825,7 @@ Param(
                 if ($_ -ne "") {
 
                     if ($_.EndsWith("*")) {
-                        Get-ChildItem $_ | ForEach-Object {
+                        Get-ChildItem $_  -Force | ForEach-Object {
                             $firstCompress = Invoke-SinglePack -ArchiveFolder $_.FullName -ArchiveFile $ArchiveFile -FileFilter $FileFilter -ZipFormat $7zipFormat -FirstCompress $firstCompress -CompressionLevel $7zipLevel
                         }
                     } else {
@@ -884,19 +888,20 @@ Param(
     $jsonData.Add("Software",$dataItem)
 
     $items = New-Object System.Collections.ArrayList
-    $dataItem = @{"Reconcile"="$ReconcileFile";"Caption"="File listing of archive for reconciliation";}
+    $dataItem = @{"Topic"="Reconcile";"Reconcile"="$ReconcileFile";"Caption"="File listing of archive for reconciliation";}
     $null = $items.Add($dataItem)
     
     if ($IncludeExif) {
-        $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $global:default_exifFile
-        $dataItem = @{"Exif"="$ExifFile";"Caption"="Exif information";}
+        $fname = [System.IO.Path]::GetFileNameWithoutExtension($ReconcileFile)
+        $ExifFile = Join-Path -Path $global:MetadataPathName -ChildPath $($fname+"_exif.csv")
+        $dataItem = @{"Topic"="Exif";"Exif"="$ExifFile";"Caption"="Exif information";}
         $null = $items.Add($dataItem)
     }
 
-    $dataItem = @{"SecretFile"="$SecretFile";"Caption"="File used for complex password storage with asymmetric key";}
+    $dataItem = @{"Topic"="SecretFile";"SecretFile"="$SecretFile";"Caption"="File used for complex password storage with asymmetric key";}
     $null = $items.Add($dataItem)
 
-    $dataItem = @{"FileFilter"="$FileFilter";"Caption"="File filter used with Compress";}
+    $dataItem = @{"Topic"="FileFilter";"FileFilter"="$FileFilter";"Caption"="File filter used with Compress";}
     $null = $items.Add($dataItem)
 
     $jsonData.Add("Links",$items)
@@ -1774,6 +1779,9 @@ Param(
             $restoreFileName = $(Join-Path -Path $RestoreFolder -ChildPath $_.FullName)    
         }
         If (Test-Path -Path $restoreFileName ) {    
+
+            $fileItem = Get-Item -Path $restoreFileName -Force
+
             if (!($ExcludeHash)) {
                 if ($_.Hash -ne "") {
                     $targetHash= (Get-FileHash -Path $restoreFileName).Hash
@@ -1795,12 +1803,12 @@ Param(
                 }
             }
 
-            if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
-                Write-Log "LastWrite mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.LastWriteTime)"
+            if ($fileItem.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
+                Write-Log "LastWrite mismatch for file '$restoreFileName' with target value $($fileItem.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.LastWriteTime)"
                 $errorCreateCount = $errorCreateCount + 1
 
                 $dateTimeValue = [Datetime]::ParseExact($_.LastWriteTime, 'yyyy-MM-ddTHH:mm:ss', $null)
-                $fileValue = (Get-Item -Path $restoreFileName).LastWriteTime
+                $fileValue = $fileItem.LastWriteTime
                 $diff = ($dateTimeValue - $fileValue).Seconds
                 # Allow +/- 2 second discrepancy
                 if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
@@ -1815,9 +1823,9 @@ Param(
                     $errorFileLogged = $true
                 }
             }
-            if ((Get-Item -Path $restoreFileName).Length -ne $_.Length) {
+            if ($fileItem.Length -ne $_.Length) {
                 $errorCount = $errorCount + 1
-                Write-Log "Length mismatch for file '$restoreFileName' with target value $(Get-Item -Path $restoreFileName).Length) expected $($_.Length)"
+                Write-Log "Length mismatch for file '$restoreFileName' with target value $($fileItem.Length) expected $($_.Length)"
                                     
                 if (!$errorFileLogged) {
                     if (!(Test-Path -Path $global:default_errorListFile)) {
@@ -1832,12 +1840,12 @@ Param(
             # Note that last / write access time is not checked by default as it will commonly be changed after restore
             if ($extendedCheck) {
 
-                if ((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
-                    Write-Log "Creation mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.CreationTime)"
+                if ($fileItem.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.CreationTime) {
+                    Write-Log "Creation mismatch for file '$restoreFileName' with target value $($fileItem.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")) expected $($_.CreationTime)"
                     $errorCreateCount = $errorCreateCount + 1
     
                     $dateTimeValue = [Datetime]::ParseExact($_.CreationTime, 'yyyy-MM-ddTHH:mm:ss', $null)
-                    $fileValue = (Get-Item -Path $restoreFileName).CreationTime
+                    $fileValue = $fileItem.CreationTime
                     $diff = ($dateTimeValue - $fileValue).Seconds
                     # Allow +/- 2 second discrepancy
                     if (($diff.Seconds -lt -2) -or ($diff.Seconds -gt 2)) {
@@ -1854,9 +1862,9 @@ Param(
 
                 }
     
-                if ((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastAccessTime) {
+                if ($fileItem.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastAccessTime) {
                     $errorCount = $errorCount + 1
-                    Write-Log "Last access mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                    Write-Log "Last access mismatch for file '$restoreFileName' with target value $($fileItem.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
                                     
                     if (!$errorFileLogged) {
                         if (!(Test-Path -Path $global:default_errorListFile)) {
@@ -1867,9 +1875,9 @@ Param(
                     }
 
                 }
-                if ((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
+                if ($fileItem.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss") -ne $_.LastWriteTime) {
                     $errorCount = $errorCount + 1
-                    Write-Log "Last write mismatch for file '$restoreFileName' with target value $((Get-Item -Path $restoreFileName).LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
+                    Write-Log "Last write mismatch for file '$restoreFileName' with target value $($fileItem.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss"))"
                                     
                     if (!$errorFileLogged) {
                         if (!(Test-Path -Path $global:default_errorListFile)) {
@@ -1882,7 +1890,7 @@ Param(
                 }
             }
 
-            $totalFileSize = $totalFileSize + (Get-Item -Path $restoreFileName).Length             
+            $totalFileSize = $totalFileSize + $fileItem.Length             
         } else {
             $missingFileCount = $missingFileCount + 1
             $errorCount = $errorCount + 1
