@@ -25,7 +25,7 @@ Compare-Peter -ReconcileFile .\myrobocopy.csv -RestoreFolder <Destination> -Excl
 The source and destination folders can be network paths i.e. start with \\\\
 
 The above robocopy command retries 100 times failed copies.  The default is a million with a 30 second
-wait time between retries.  Probably no a realistic time before failing.
+wait time between retries.  Probably not a realistic time before failing.
 
 If you want to verify the HASH for each file copied, then remove the ``-ExcludeHash`` directive.  Be
 warned that generating a hash on both source and destination will take some time if you
@@ -37,6 +37,10 @@ Further information on Robocopy can be found on the internet such as:
 * [https://pureinfotech.com/robocopy-transfer-files-fast-network-windows-10/](https://pureinfotech.com/robocopy-transfer-files-fast-network-windows-10/)
 * [https://www.techrepublic.com/article/how-to-quickly-back-up-just-your-data-in-windows-10-with-robocopys-multi-threaded-feature/](https://www.techrepublic.com/article/how-to-quickly-back-up-just-your-data-in-windows-10-with-robocopys-multi-threaded-feature/)
 * [https://www.youtube.com/watch?v=gTzTeHmKMKw](https://www.youtube.com/watch?v=gTzTeHmKMKw)
+
+You need to consider the **security** of the network path when using robocopy.  The copy will use the underlying
+network transport layer and protocol.  If you are not using SMBv3 protocol then the file contents may not
+be secure in transit.
 
 ## Picture EXIF data
 

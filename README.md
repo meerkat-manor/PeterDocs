@@ -3,7 +3,8 @@
 ## Summary
 
 PeterDocs is for [Protecting](Encryption.md), [Transferring](SendArchive.md) and [Reconciling](Reconcile.md) documents
-on a remote computer where the computers are isolated or on different networks.
+on a remote computer where the computers are isolated or on different networks and not accessible via
+file network shares.
 
 The PowerShell module is available on [PowerShell Gallery](https://www.powershellgallery.com/packages/PeterDocs)
 
@@ -17,10 +18,10 @@ to veriy that the contents are transferred, unaltered.
 
 See [Quick Start](QuickStart.md) if you are ready to start and don't need the details.
 
-If you have access to both source and target folders, then you should consider
-using tools such as:
+If you have access to both source and target folders as shared folders or even
+on the same computer, then you should consider using tools such as:
 
-* Microsoft ROBOCOPY
+* Microsoft ROBOCOPY  - See [Alternate Uses](./Docs/AlternateUses.md)
 * rsync
 
 Alternatively, you can use backup and restore utilities on the folder, and rely that
