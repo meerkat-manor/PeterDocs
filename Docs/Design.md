@@ -3,7 +3,7 @@
 ## Objective
 
 The objective is to provide a simple capability to create a secure
-archive file containiung documents to be restored and reconciled at the destination.
+archive file containing documents to be restored and reconciled at the destination.
 
 The design artefacts must provide all the tools required to pack,
 secure, unpack and reconcile the restored/cloned documents.

@@ -43,7 +43,7 @@ The "s3" prefix is to upload to AWS S3.  The "b2" prefix
 is to upload to Backblaze.
 
 If you are uploading to AWS you can specify the AWS profile name
-in parameter ```TargetProfile```.  In this situtation the profile
+in parameter ```TargetProfile```.  In this situation the profile
 needs to exist in the AWS credentials on your local device and user profile.
 
 If you are uploading to Backblaze you specify the ```AccountId``` and the

@@ -1,4 +1,4 @@
-# PeterDocs - Protect, Transfer, Reconcile Dcouments
+# PeterDocs - Protect, Transfer, Reconcile Documents
 
 ## Summary
 
@@ -14,7 +14,7 @@ that execute the code are required to have Windows PowerShell installed.
 Use the script to create an encrypted archive of the source folder and its contents, then
 transfer the archive file to your target, where the content are unpacked using the decryption
 key. After archive contents are restored you can execute the reconcile function
-to veriy that the contents are transferred, unaltered.
+to verify that the contents are transferred, unaltered.
 
 See [Quick Start](QuickStart.md) if you are ready to start and don't need the details.
 
@@ -90,11 +90,11 @@ will need write access on the target storage. A log file is written at execution
 to record activity.
 
 Your bulk file transfer is encrypted in transit.  Note that if you use the
-SecretKey method the ecnrypted contents will only be as secure as the strength
+SecretKey method the encrypted contents will only be as secure as the strength
 of your secret.
 
 You can use storage providers such as Dropbox, AWS S3, Google Drive, OneDrive or BackBlaze
-and your documents have additonal protection.
+and your documents have additional protection.
 
 A log file is produced on execution.  Repeated executions on the same day
 will add text content to the same log file.  The default log name takes the form:

@@ -4,7 +4,7 @@ A reconcile file is generated as part of the Compress process and packed with th
 
 ## Why
 
-When transferring or cloning documenmts to another location, you will want to
+When transferring or cloning documents to another location, you will want to
 verify that the same documents have been restored unaltered at the destination.
 
 ## When
@@ -44,7 +44,7 @@ The document last update and time is not checked because the value
 will reflect the date and time of restore.
 
 The reconciliation summary is displayed in the terminal and the log
-wil lhave more information.
+will have more information.
 
 If any errors are listed, please investigate the discrepancy.
 

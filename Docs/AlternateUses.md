@@ -11,7 +11,7 @@ You can use ``PeterDocs`` to reconcile files transferred using the Windows
 system.
 
 Robocopy does require your source and target folders to be accessible from
-the coputer that is executing the command.
+the computer that is executing the command.
 
 To use ``PeterDocs`` and ``Robocopy`` install PeterDocs from the PowerShell Gallery
 and execute the below commands in a PowerShell terminal, changing the values to suit.
@@ -52,7 +52,7 @@ below command in a PowerShell terminal, changing the values to suit.
 New-PeterReconcile -ReconcileFile .\mypictures_metadata.csv -SourceFolder <Source> -ExcludeHash -IncludeExif
 ```
 
-At the conclusion of the exceution, you will have a file named ``##peter_exif##.csv`` that
+At the conclusion of the execution, you will have a file named ``##peter_exif##.csv`` that
 contains your pictures metadata.  You will also have a CSV file with picture file
 general metadata named ``mypictures_metadata.csv`` such as creation time and size.
 

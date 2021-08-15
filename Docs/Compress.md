@@ -7,7 +7,7 @@ or cloned to a remote location securely.  The documents can be binary or text do
 including personal photographs or sensitive Microsoft Word documents.
 
 At the remote location a reconciliation can be performed to verify that the documents
-have been recieved and no alteration occurred.
+have been received and no alteration occurred.
 
 ## Why
 
@@ -49,7 +49,7 @@ You can ignore the remaining parameters if you are happy with the defaults.
 
 ## What
 
-The ```Compress-Peter``` compressess the contet of the ```SourceFolder``` and saves the result
+The ```Compress-Peter``` compresses the content of the ```SourceFolder``` and saves the result
 as the encrypted ```ArchiveFile```.  The archive file also contains the reconciliation file
 so that the recipient of the archive is able to reconcile the restore at the remote location.
 
@@ -67,7 +67,7 @@ generate delta archive files.
 
 ## Send Usage
 
-Once the archive file is created you will commonly send or transfer it to anohter
+Once the archive file is created you will commonly send or transfer it to another
 location where it wll be unpacked.
 
 Please read next the documentation on [sending the archive](SendArchive.md)

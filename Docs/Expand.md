@@ -36,7 +36,7 @@ To expand the archive you will need write access to the ```RestoreFolder``` loca
 ## What
 
 The ```Expand-Peter``` decrypts the archive file and expands the contents into
-the specified restore folder.  It does not peform a reconciliation which is the
+the specified restore folder.  It does not perform a reconciliation which is the
 next step.
 
 ## Reconcile Usage

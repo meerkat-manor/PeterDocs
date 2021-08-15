@@ -5,7 +5,7 @@ There are various options for using PeterDocs.  The following sections will cove
 ## File Filter
 
 The ``-FileFilter`` parameter allows selection of files that are to be included into the archive file.
-The parameter only applies to the compress function or buidling the reconciliation file.
+The parameter only applies to the compress function or building the reconciliation file.
 
 For example:
 
@@ -23,7 +23,7 @@ will only include files with the extension ".jpg" and starting with the characte
 
 ## ReconcileFile
 
-The ``-ReconcileFile`` parameter allows specification of the reocnciliation file if you
+The ``-ReconcileFile`` parameter allows specification of the reconciliation file if you
 wish to select your own name.
 
 For example:
@@ -67,7 +67,7 @@ includes the date.
 ## Compression Level
 
 By setting the Compression level to a value recognized by the 7Zip4Powershell module you can gain more control
-of the compresison.  The main use case here is for documents that are already compressed and would
+of the compression.  The main use case here is for documents that are already compressed and would
 not benefit from future compression.  To use this feature you need to set the environment variable.
 
 If all documents are JPEG pictures then setting this value can speed up the compress process

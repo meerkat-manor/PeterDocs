@@ -1,6 +1,6 @@
 # Install
 
-PeterDocs is a module that can be donwloaded or installed from
+PeterDocs is a module that can be downloaded or installed from
 [PowerShell Gallery](https://xx.com/)
 
 ## Pre-requisites
@@ -43,7 +43,7 @@ On a **computer with Internet (PowerShell Gallery) access** do the following ste
 1. First check you have PowerShell version 5 or later
 
 ```powershell
-$PSVersionTabe.PSVersion
+$PSVersionTable.PSVersion
 ```
 
 2. Download the PeterDocs module
@@ -63,7 +63,7 @@ On the **computer lacking Internet (PowerShell Gallery) access** do the followin
 1. First check you have PowerShell version 5 or later
 
 ```powershell
-$PSVersionTabe.PSVersion
+$PSVersionTable.PSVersion
 ```
 
 2. Run the following command to determine where the ZIP needs to be unpacked
