@@ -105,6 +105,26 @@ via local file NuGet package file if Internet access is limited.
 
 See the [Advanced Usage](Docs/Advanced.md) for more advanced options.
 
+## Limitations
+
+### Secure string
+
+The current version does not use secure strings for password protection 
+within the code.  You data is stil protected with encryption.
+
+## Path length
+
+There is a limitation with the PowerShell functions used within PeterDocs
+of file paths having to be 260 characters in length or less.
+
+If you have long file paths, the processing will fail.  A possible 
+work around is to use mapped net work drive even on your local sourced
+file.  The command in PowerShell would be something like:
+
+```powershell
+New-PSDrive "X" -PSProvider FileSysytem -Root "$Source" 
+```
+
 ## Further Reading
 
 [Design](Docs/Design.md)

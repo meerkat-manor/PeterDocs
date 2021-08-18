@@ -33,7 +33,7 @@ $global:default_metaFile = "##peter##.json"
 $global:default_errorListFile = Join-Path -Path ".\" -ChildPath "##peter_error_list##.txt"
 $global:LogPathName = ""
 $global:MetadataPathName = Join-Path -Path ".\" -ChildPath ".peter-metadata"
-$global:Version = "0.31"
+$global:Version = "0.32"
 
 
 function Open-Log {
@@ -775,13 +775,13 @@ Param(
         {
             $SecretFile = $ArchiveFile + ".key"
         }
+        $secret = New-RandomPassword -Length 80
+        Protect-CmsMessage -To $recipientKey -OutFile $SecretFile -Content $secret 
         if (!(Test-Path -Path $SecretFile)) {
             Write-Log "Secret file '$SecretFile' not found" 
             Close-Log
             Throw "Secret file '$SecretFile' not found"
         }
-        $secret = New-RandomPassword -Length 80
-        Protect-CmsMessage -To $recipientKey -OutFile $SecretFile -Content $secret 
     } else {
         if (!(Test-PasswordQuality -TestPassword $SecretKey)) {
             Write-Log "Secret Key does not meet complexity rules" 

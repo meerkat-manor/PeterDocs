@@ -5,6 +5,10 @@ param (
     [String] $Destination
 )
 
+# Note that there is a path limitation for files of 260 characters
+# beyond which PeterDocs will fail
+# You could also use drive mapping to overcome this
+#  New-PSDrive "X" -PSProvider FileSysytem -Root "$Source" 
 
 $step ="Starting"
 Try {
@@ -13,7 +17,7 @@ Try {
     $step ="Running robocopy"
     Write-Host "Running robocopy for source '$Source' and destination '$Destination'"
     # Change the command line switches to suit
-    robocopy `"C:\Users\tom\Small Share\misc_05`"   `"$Destination`" /e /copy:DAT /dcopy:DAT /log+:./robocopy.log
+    robocopy `"$Source`"   "$Destination" /e /copy:DAT /dcopy:DAT /log+:./robocopy.log /r:1000 /w:10
     if ($LastExitCode -lt 8) {
         Write-Host "Robocopy succeeded"
     } else {
