@@ -86,3 +86,11 @@ Import-Module PeterDocs
 ```
 
 The summary details on PeterDocs should be displayed.
+
+## Uninstall
+
+To uninstall ``PeterDocs``, execute the following PowerShell command
+
+```powershell
+    UnInstall-Module -Name PeterDocs 
+```
