@@ -415,7 +415,21 @@ Param(
                         if ($ExcludeHash) {
                             $sourceHash = ""
                         } else {
-                            $sourceHash = (Get-FileHash -Path $_.FullName).Hash
+                            $fullN = $_.FullName
+                            try 
+                            {
+                                $sourceHash = (Get-FileHash -Path $fullN -ErrorAction Stop).Hash
+                            } 
+                            catch 
+                            {
+                                $sourceHash = ""
+                                $errorDetail = $_.Exception.Message
+                                Write-Log "Error in hash with message: $errorDetail"
+                                Write-Log "Hash creation failed for '$fullN'. Maybe the file is open in another process"
+                                Close-Log
+                                Throw "Hash creation failed for '$fullN'. Maybe the file is open in another process"
+                            }
+
                         }
                         $record = '"'+$_.FullName.Replace($RootFolder, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
                         $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
@@ -454,7 +468,21 @@ Param(
             if ($ExcludeHash) {
                 $sourceHash = ""
             } else {
-                $sourceHash = (Get-FileHash -Path $_.FullName).Hash
+                $fullN = $_.FullName
+                try 
+                {
+                    $sourceHash = (Get-FileHash -Path $fullN  -ErrorAction Stop).Hash
+                } 
+                catch 
+                {
+                    $sourceHash = ""
+                    $errorDetail = $_.Exception.Message
+                    Write-Log "Error in hash with message: $errorDetail"
+                    Write-Log "Hash creation failed for '$fullN'. Maybe the file is open in another process"
+                    Close-Log
+                    Throw "Hash creation failed for '$fullN'. Maybe the file is open in another process"
+                }
+            
             }
             $record = '"'+$_.FullName.Replace($RootFolder, "")+'","'+$_.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
             $record = $record + ',"'+$_.CreationTime.ToString("yyyy-MM-ddTHH:mm:ss")+'","'+$_.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")+'"'
@@ -696,6 +724,7 @@ Param(
     } else {
         Write-Log "Parameter: SecretKey   Value: ************** "
     }
+
     Write-Log "Parameter: ArchiveFile   Value: $ArchiveFile "
     Write-Log "Parameter: ReconcileFile   Value: $ReconcileFile "
     Write-Log "Parameter: FileFilter   Value: $FileFilter "
@@ -770,9 +799,8 @@ Param(
         $ArchiveFile = $(Get-SoftwareName) + $(Get-Date -Format "yyyyMMdd_HHmm") + ".7z"
     }
 
-    if ($SecretKey -eq "") {
-        if ($SecretFile -eq "")
-        {
+    if ($SecrettKey -eq "") {
+        if ($SecretFile -eq "") {
             $SecretFile = $ArchiveFile + ".key"
         }
         $secret = New-RandomPassword -Length 80
@@ -795,21 +823,18 @@ Param(
     Write-Log "Saving folders/files to archive file '$ArchiveFile'"
     Write-Host "Saving folders/files to archive file '$ArchiveFile'"
 
-    if ($ReconcileFile -eq "")
-    {
+    if ($ReconcileFile -eq "") {
         if (!(Test-Path -Path $global:MetadataPathName)) {
             $null = New-Item -Path $global:MetadataPathName -ItemType Directory
         }
         $ReconcileFile = Join-Path -Path $global:MetadataPathName -ChildPath $default_reconcileFile
     }
 
-    if ($FileFilter -eq "")
-    {
+    if ($FileFilter -eq "") {
         $FileFilter = "*"
     }
 
-    if ($SourceFolder.EndsWith("*"))
-    {
+    if ($SourceFolder.EndsWith("*")) {
         Write-Log "Archive primary folder is '$SourceFolder'"
         $firstCompress = $true
         Get-ChildItem $SourceFolder -Force | ForEach-Object {
