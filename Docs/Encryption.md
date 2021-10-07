@@ -76,7 +76,25 @@ To list your current certificates use the below PowerShell command.
    Get-Childitem -Path "Cert:\CurrentUser\My" -DocumentEncryptionCert     
 ```
 
+**Note**: The certficates from above is assigned to your current logged in user and not the local machine
+
 ### Exporting your Certificate
 
 You will need to export your public key and send it to the person who will generate the archive
 file for you.  That person with your public key will need to import your public key.
+
+On Windows, execute the command ``certmgr`` and export the certificate under "Personal\Certificates" for example.
+
+### Certificate Backup
+
+You should create a backup of your certificate (public and private) in case your local 
+device suffers a failure.  Please secure the backup copy.
+
+You can use the below as a sample code for exporting the default ``PeterDocs`` 
+certificate is give below
+
+```powershell
+   Get-ChildItem -Path "Cert:\CurrentUser\My"  | where{$_.Subject -eq "CN=PeterDocs"}  | Export-Certificate -Type CERT -FilePath C:\Temp\PeterDocs_cert.cer -Force
+```
+
+Change the values and file name to suit your situation.  This file can be imported using the ``certmgr``
